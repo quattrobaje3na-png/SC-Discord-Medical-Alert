@@ -1,3 +1,24 @@
-SC-Discord-Medical-Alert (v6.7)SC-Discord-Medical-Alert is a lightweight Python-based monitoring tool designed for Star Citizen pilots. By analyzing the visual state of the game client in real-time, it bridges the gap between in-game emergencies and out-of-game coordination.✨ Key FeaturesIntelligent Visual Detection: Uses OCR and pixel-density analysis to identify "Incapacitated" and "Respawn" states without relying on game logs.Discord Integration: Sends instant, low-profile notifications to your chosen Discord channel via Webhooks.Sustained-Darkness Verification: Prevents false death alerts by requiring a 5-second full-screen blackout (standard for the SC regeneration cycle).Targeted Text Recognition: Specifically looks for "You Are Incapacitated" to trigger rescue alerts, avoiding false positives from environmental blurs.Focus-Aware Monitoring: Automatically pauses scanning when the game is minimized to save resources and prevent ghost triggers.Built-in Setup GUI: No need to edit JSON files manually; a setup window handles your configuration on the first launch.🚀 Getting Started1. PrerequisitesPython 3.x: Ensure Python is installed on your system.Tesseract OCR: This tool requires Tesseract to "read" HUD text.Download and install it from GitHub.Note: Default install path is assumed to be C:\Program Files\Tesseract-OCR\tesseract.exe.2. InstallationClone the repository or download the source code, then install the required Python libraries:Bashpip install pyautogui pytesseract numpy opencv-python pygetwindow pillow requests
-3. UsageRun the script using Python:Bashpython medalert.py
-On the first run, a setup window will appear. Enter your Discord Webhook URL and your Player Handle to generate your configuration.🛠️ How it WorksThe monitor operates on a priority-based state machine:The Death Check (Priority 1): The script monitors the entire screen for a "Blackout" state. If the screen remains 98% dark for 5 continuous seconds, it triggers a Respawn notification.The Incap Check (Priority 2): If the screen is not black, the script scans the bottom-left quarter for the specific string "Incapacitated."The Cooldown: To prevent notification spam while lying in a downed state, a 60-second cooldown is applied between repeated alerts.📜 ConfigurationSettings are stored in sc_alert_config.json. You can manually update your Webhook or Player Name there at any time.SettingDescriptionwebhook_urlYour unique Discord Webhook URL.player_nameThe handle that will appear in the Discord notification.⚖️ DisclaimerThis is a community-driven tool and is not affiliated with Cloud Imperium Games (CIG). It does not inject code into the Star Citizen client; it only observes the visual output of the monitor.Developed by CMDR Quattro Fly safe, and if you can't fly safe, fly with a beacon.
+# SC-Discord-Medical-Alert (v6.7)
+
+**SC-Discord-Medical-Alert** is a lightweight Python-based visual monitoring tool designed for Star Citizen. By analyzing the visual state of the game client in real-time, it bridges the gap between in-game emergencies and out-of-game coordination.
+
+✨ Key Features
+
+* Monitors display in real time to identify Incapacitated and "Respawned states 
+* Sends instant, low-profile notifications to your chosen Discord channel via a provided Webhook.
+* Automatically pauses scanning when the game is minimized to save resources and prevent false triggers.
+* No need to edit JSON files manually; a setup window handles your configuration on the first launch.
+
+🚀 Getting Started
+
+1. Prerequisites
+* **Python 3.x**: Ensure Python is installed on your system.
+* **Tesseract OCR**: This tool requires Tesseract to monitor your game window.
+    * Download and install it from [UB-Mannheim/tesseract](https://github.com/UB-Mannheim/tesseract/wiki).
+    * *Note: Default install path is assumed to be `C:\Program Files\Tesseract-OCR\tesseract.exe`.*
+
+2. Installation
+Clone the repository or download the source code, then install the required Python libraries:
+
+```bash
+pip install pyautogui pytesseract numpy opencv-python pygetwindow pillow requests
