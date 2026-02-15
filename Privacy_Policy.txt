@@ -1,0 +1,19 @@
+# Privacy Policy
+
+We value your privacy and aim to be 100% transparent about how **SC Squad Medical Monitor** handles data.
+
+### 1. Local-Only Processing
+* **Screen Captures:** All visual analysis (OCR) happens entirely in your computer's RAM. No images of your game or desktop are ever saved to disk or uploaded to the cloud.
+* **Configuration:** Your sensitive data (Discord Webhooks, Bot Tokens) is stored locally on your machine in `sc_alert_config.json`. We never have access to this information.
+
+
+
+### 2. Discord Integration
+* **Message Parsing:** The companion Discord App only reads message content in the specific channel you provide. It scans exclusively for keyword triggers (`INCAPACITATED`, `Dead & Respawning`) to update your overlay.
+* **No Logging:** This tool does not log, store, or transmit chat history. 
+
+### 3. Third-Party Services
+This Software relies on Discord for communication. By using this tool, you also adhere to the [Discord Privacy Policy](https://discord.com/privacy).
+
+### 4. Open Source Transparency
+Since this project is open-source, you are encouraged to audit the code yourself to verify that no data collection is occurring.
