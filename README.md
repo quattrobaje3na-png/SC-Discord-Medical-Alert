@@ -11,7 +11,9 @@
 * Sends instant, low-profile notifications to your chosen Discord channel via a provided Webhook.
 * Automatically pauses scanning when the game is minimized to save resources and prevent false triggers.
 * No need to edit JSON files manually; a setup window handles your configuration on the first launch.
-* Each Player has to run the application locally and tie into the discord webhook and provide their Discord or In Game Username. 
+* Each Player has to run the application locally and tie into the discord webhook and provide their Discord or In Game Username.
+
+This tool is a third-party community project and is not affiliated with or endorsed by Cloud Imperium Games. It uses non-invasive visual OCR to detect game states. However, using any third-party software with Star Citizen carries a theoretical risk. The developer is not responsible for any actions taken against your account by CIG.
 
 🚀 Getting Started
 
@@ -26,5 +28,3 @@ Clone the repository or download the source code, then install the required Pyth
 
 ```bash
 pip install pyautogui pytesseract numpy opencv-python pygetwindow pillow requests
-
-This tool is a third-party community project and is not affiliated with or endorsed by Cloud Imperium Games. It uses non-invasive visual OCR to detect game states. However, using any third-party software with Star Citizen carries a theoretical risk. The developer is not responsible for any actions taken against your account by CIG.
