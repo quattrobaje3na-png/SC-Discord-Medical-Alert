@@ -1,3 +1,6 @@
+
+![medical alert logo](https://github.com/user-attachments/assets/18fc39f4-b75b-4c3e-9092-9b3a4da138b9)
+
 # SC-Discord-Medical-Alert (v1.0)
 
 **SC-Discord-Medical-Alert** is a lightweight Python-based visual monitoring tool designed for Star Citizen. By analyzing the visual state of the game client in real-time, it bridges the gap between in-game emergencies and out-of-game coordination.
