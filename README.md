@@ -26,3 +26,5 @@ Clone the repository or download the source code, then install the required Pyth
 
 ```bash
 pip install pyautogui pytesseract numpy opencv-python pygetwindow pillow requests
+
+This tool is a third-party community project and is not affiliated with or endorsed by Cloud Imperium Games. It uses non-invasive visual OCR to detect game states. However, using any third-party software with Star Citizen carries a theoretical risk. The developer is not responsible for any actions taken against your account by CIG.
