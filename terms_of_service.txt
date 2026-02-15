@@ -4,14 +4,17 @@
 
 By downloading, installing, or using the **SC Squad Medical Monitor** (the "Software"), you agree to the following terms:
 
-### 1. Risk Disclaimer
-This Software is a third-party community project and is **not** affiliated with, authorized, or endorsed by Cloud Imperium Games (CIG). You acknowledge that using any third-party software with Star Citizen carries a theoretical risk. You assume all responsibility for the use of this Software.
+### 1. Intellectual Property & Ownership Disclaimer
+**SC Squad Medical Monitor** is a third-party community utility. The developer of this Software does **not** own, nor claim to own, "Star Citizen," "Squadron 42," or any associated trademarks, logos, or intellectual property. All rights, titles, and interests in and to Star Citizen belong exclusively to **Cloud Imperium Rights, LLC** and **Roberts Space Industries Corp.**
 
-### 2. "As-Is" Warranty
+### 2. Risk Disclaimer
+This Software is a community project and is **not** affiliated with, authorized, or endorsed by Cloud Imperium Games (CIG). You acknowledge that using any third-party software with Star Citizen carries a theoretical risk. You assume all responsibility for the use of this Software.
+
+### 3. "As-Is" Warranty
 The Software is provided on an "as-is" basis. The developer makes no warranties regarding the stability, accuracy of detection, or compatibility of the Software with future game updates.
 
-### 3. Limitation of Liability
+### 4. Limitation of Liability
 The developer shall not be held liable for any actions taken against your Star Citizen account (including bans or suspensions), hardware malfunctions, or data loss resulting from the use of this Software.
 
-### 4. Acceptable Use
+### 5. Acceptable Use
 You agree not to modify the Software to create automated "bots" for gameplay or to use the Software to harass or disrupt the experience of other players.
