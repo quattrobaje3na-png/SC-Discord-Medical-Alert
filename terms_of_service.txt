@@ -1,0 +1,17 @@
+# Terms of Service
+
+**Last Updated:** February 15, 2026
+
+By downloading, installing, or using the **SC Squad Medical Monitor** (the "Software"), you agree to the following terms:
+
+### 1. Risk Disclaimer
+This Software is a third-party community project and is **not** affiliated with, authorized, or endorsed by Cloud Imperium Games (CIG). You acknowledge that using any third-party software with Star Citizen carries a theoretical risk. You assume all responsibility for the use of this Software.
+
+### 2. "As-Is" Warranty
+The Software is provided on an "as-is" basis. The developer makes no warranties regarding the stability, accuracy of detection, or compatibility of the Software with future game updates.
+
+### 3. Limitation of Liability
+The developer shall not be held liable for any actions taken against your Star Citizen account (including bans or suspensions), hardware malfunctions, or data loss resulting from the use of this Software.
+
+### 4. Acceptable Use
+You agree not to modify the Software to create automated "bots" for gameplay or to use the Software to harass or disrupt the experience of other players.
