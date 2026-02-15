@@ -4,7 +4,7 @@
 
 ✨ Key Features
 
-* Monitors display in real time to identify Incapacitated and "Respawned states 
+* Monitors display in real time to identify Incapacitated and Repawned states 
 * Sends instant, low-profile notifications to your chosen Discord channel via a provided Webhook.
 * Automatically pauses scanning when the game is minimized to save resources and prevent false triggers.
 * No need to edit JSON files manually; a setup window handles your configuration on the first launch.
