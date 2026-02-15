@@ -8,6 +8,7 @@
 * Sends instant, low-profile notifications to your chosen Discord channel via a provided Webhook.
 * Automatically pauses scanning when the game is minimized to save resources and prevent false triggers.
 * No need to edit JSON files manually; a setup window handles your configuration on the first launch.
+* Each Player has to run the application locally and tie into the discord webhook and provide their Discord or In Game Username. 
 
 🚀 Getting Started
 
@@ -22,5 +23,3 @@ Clone the repository or download the source code, then install the required Pyth
 
 ```bash
 pip install pyautogui pytesseract numpy opencv-python pygetwindow pillow requests
-
-Each Player has to run the application locally and tie into the discord webhook and provide their Discord or In Game Username. 
