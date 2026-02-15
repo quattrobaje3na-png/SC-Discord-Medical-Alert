@@ -1,30 +1,56 @@
 
 ![medical alert logo](https://github.com/user-attachments/assets/18fc39f4-b75b-4c3e-9092-9b3a4da138b9)
 
-# SC-Discord-Medical-Alert (v1.0)
+This updated README reflects the new SC Squad Medical Monitor (v2.0) features, including the high-speed blur-resistant OCR, the shared Squad Status Overlay, and the mandatory GitHub app installation.
 
-**SC-Discord-Medical-Alert** is a lightweight Python-based visual monitoring tool designed for Star Citizen. By analyzing the visual state of the game client in real-time, it bridges the gap between in-game emergencies and out-of-game coordination.
+SC Squad Medical Monitor (v2.0)
+SC Squad Medical Monitor is a tactical Python utility for Star Citizen that bridges the gap between in-game emergencies and squad coordination. It synchronizes local screen analysis with a shared Discord feed to provide a live Squad Status Overlay over your game session. Track Incapacitated or Respawning players in real-time, ensuring no casualty goes unnoticed during high-stakes operations.
+
+Requires downloading the Python app here: GitHub Repository Link
 
 ✨ Key Features
+Live Squad Overlay: An always-on-top HUD element showing the real-time health and respawn status of your entire squad.
 
-* Monitors display in real time to identify Incapacitated and Repawned states 
-* Sends instant, low-profile notifications to your chosen Discord channel via a provided Webhook.
-* Automatically pauses scanning when the game is minimized to save resources and prevent false triggers.
-* No need to edit JSON files manually; a setup window handles your configuration on the first launch.
-* Each Player has to run the application locally and tie into the discord webhook and provide their Discord or In Game Username.
+Intelligent Vision Engine: Uses blur-resistant OCR to detect the "Incapacitated" state even through heavy depth-of-field effects.
 
-This tool is a third-party community project and is not affiliated with or endorsed by Cloud Imperium Games. It uses non-invasive visual OCR to detect game states. However, using any third-party software with Star Citizen carries a theoretical risk. The developer is not responsible for any actions taken against your account by CIG.
+Dual-Trigger Alerts: Monitors for both medical emergencies (Incap) and hard deaths (Black Screen detection).
+
+Tactical Respawn Timer: Status locks to "Dead & Respawning" for 60 seconds after death to ensure teammates are aware of your downtime.
+
+Automatic Resource Management: Pauses scanning when the game is minimized to save CPU/GPU overhead and prevent false triggers.
+
+Zero-Manual Config: Integrated setup window handles all Webhook, Bot Token, and Channel configuration on first launch.
+
+🛡️ Disclaimer
+This tool is a third-party community project and is not affiliated with or endorsed by Cloud Imperium Games (CIG). The developer does not claim ownership of Star Citizen or its assets. This tool uses non-invasive visual OCR to detect game states. Using third-party software with Star Citizen carries a theoretical risk; the developer is not responsible for any actions taken against your account.
 
 🚀 Getting Started
+Prerequisites
+Python 3.x: Ensure Python is installed and added to your PATH.
 
-1. Prerequisites
-* **Python 3.x**: Ensure Python is installed on your system.
-* **Tesseract OCR**: This tool requires Tesseract to monitor your game window.
-    * Download and install it from [UB-Mannheim/tesseract](https://github.com/UB-Mannheim/tesseract/wiki).
-    * *Note: Default install path is assumed to be `C:\Program Files\Tesseract-OCR\tesseract.exe`.*
+Tesseract OCR: Required for screen monitoring. Download from UB-Mannheim/tesseract.
 
-2. Installation
-Clone the repository or download the source code, then install the required Python libraries:
+Note: Default install path is assumed to be C:\Program Files\Tesseract-OCR\tesseract.exe.
 
-```bash
-pip install pyautogui pytesseract numpy opencv-python pygetwindow pillow requests
+Discord App: You must create a Discord Bot in the Developer Portal and enable the Message Content Intent.
+
+Installation
+Clone the repository and install the required Python libraries:
+
+Bash
+pip install pyautogui pytesseract numpy opencv-python pygetwindow pillow requests discord.py
+First-Time Setup
+Each player runs the application locally. On launch, provide:
+
+Player Name: Your Discord or In-Game Username.
+
+Webhook URL: The Discord channel integration URL.
+
+Bot Token: Your Discord App/Bot token.
+
+Channel ID: The numerical ID of the Discord channel used for alerts.
+
+⚖️ Legal & Privacy
+Terms of Service
+
+Privacy Policy
