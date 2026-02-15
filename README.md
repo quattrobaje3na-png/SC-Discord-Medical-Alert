@@ -22,3 +22,5 @@ Clone the repository or download the source code, then install the required Pyth
 
 ```bash
 pip install pyautogui pytesseract numpy opencv-python pygetwindow pillow requests
+
+Each Player has to run the application locally and tie into the discord webhook and provide their Discord or In Game Username. 
