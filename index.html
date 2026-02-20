@@ -1,0 +1,136 @@
+<div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:120px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px;">
+    [SYSTEM READY] - Awaiting library load...
+</div>
+
+<div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
+    <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:15px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    
+    <button id="finalStartBtn" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer;">
+        START CAPTURE
+    </button>
+</div>
+
+<div id="squad-list-container" style="margin-top:20px; color:#ff6600; font-family:Consolas, monospace; background:#111; border:1px solid #333; padding:10px; display:none;">
+    <h3 style="margin:0 0 10px 0; font-size:14px; border-bottom:1px solid #333;">-- SQUAD STATUS --</h3>
+    <div id="list-content"></div>
+</div>
+
+<video id="video" autoplay style="display:none;"></video>
+<canvas id="monitor-canvas" style="display:none;"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<script>
+(function() {
+    let lastStatus = "ALIVE";
+    let respawnStartTime = 0;
+    const COOLDOWN = 30000;
+
+    function log(msg) {
+        const d = document.getElementById('debug-log');
+        if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
+    }
+
+    // This is the core scanning logic
+    async function scanScreen() {
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('monitor-canvas');
+        if (!video || video.readyState !== 4) return;
+
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        let currentStatus = "ALIVE";
+
+        // 1. Black Screen (Death)
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let dark = 0;
+        for (let i = 0; i < frame.data.length; i += 4) {
+            if (frame.data[i] < 15 && frame.data[i+1] < 15 && frame.data[i+2] < 15) dark++;
+        }
+
+        if ((dark / (frame.data.length / 4)) > 0.95) {
+            currentStatus = "RESPAWNING";
+            respawnStartTime = Date.now();
+        } else {
+            // 2. OCR (Incap) - Crop to bottom half
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height / 2;
+            tempCanvas.getContext('2d').drawImage(canvas, 0, canvas.height / 2, canvas.width, canvas.height / 2, 0, 0, canvas.width, canvas.height / 2);
+            
+            try {
+                if (typeof Tesseract !== 'undefined') {
+                    const { data: { text } } = await Tesseract.recognize(tempCanvas, 'eng');
+                    if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
+                }
+            } catch(e) { /* Pending */ }
+        }
+
+        // 3. Respawn Delay Lock
+        if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) {
+            currentStatus = "RESPAWNING";
+        }
+
+        if (currentStatus !== lastStatus) {
+            const pName = document.getElementById('pName').value;
+            const gCode = document.getElementById('gCode').value.toUpperCase();
+            const gUrl = document.getElementById('gUrl').value;
+            
+            log("Update: " + currentStatus);
+            fetch(gUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({ player_name: pName, status: currentStatus, group_code: gCode })
+            });
+            lastStatus = currentStatus;
+        }
+    }
+
+    async function refreshSquad() {
+        const gUrl = document.getElementById('gUrl').value;
+        const gCode = document.getElementById('gCode').value.toUpperCase();
+        try {
+            const res = await fetch(`${gUrl}?group=${gCode}`);
+            const data = await res.json();
+            document.getElementById('list-content').innerHTML = Object.entries(data).map(([n, s]) => 
+                `<div style="padding:5px; border-bottom:1px solid #222;">🛡️ ${n}: <span style="color:${s === 'INCAP' ? 'red' : s === 'RESPAWNING' ? 'yellow' : '#0f0'}">${s}</span></div>`
+            ).join('');
+        } catch(e) {}
+    }
+
+    async function init() {
+        log("Attempting capture...");
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            document.getElementById('video').srcObject = stream;
+            document.getElementById('squad-list-container').style.display = "block";
+            
+            log("ACTIVE. Scanning every 3s.");
+            setInterval(scanScreen, 3000);
+            setInterval(refreshSquad, 5000);
+            
+            document.getElementById('finalStartBtn').innerText = "MONITORING ACTIVE";
+            document.getElementById('finalStartBtn').disabled = true;
+        } catch (err) {
+            log("FAILED: " + err.message);
+        }
+    }
+
+    // WP-Proof: Wait for everything to be ready
+    function checkReady() {
+        if (typeof Tesseract !== 'undefined') {
+            log("Library loaded. Ready for input.");
+            document.getElementById('finalStartBtn').addEventListener('click', init);
+        } else {
+            setTimeout(checkReady, 500);
+        }
+    }
+
+    checkReady();
+})();
+</script>
