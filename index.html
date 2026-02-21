@@ -1,17 +1,17 @@
 <div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:80px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
-    [SYSTEM READY] - Master Build v10.0 Active.
+    [SYSTEM READY] - Master Build v10.5 Active.
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
     <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gCode" placeholder="Group Code" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     
     <div style="margin-bottom:10px; font-size:12px; display:flex; align-items:center; gap:10px;">
         <label>Performance:</label>
         <select id="perfMode" style="background:#222; color:#fff; border:1px solid #444; padding:2px;">
-            <option value="4">High Performance (4s)</option>
-            <option value="16" selected>Battery Saver (16s)</option>
+            <option value="4">High Performance</option>
+            <option value="16" selected>Battery Saver</option>
         </select>
     </div>
 
@@ -24,6 +24,7 @@
 </div>
 
 <div id="list-content" style="display:none;"></div>
+
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
 <canvas id="pip-canvas" width="600" height="400" style="display:none;"></canvas>
@@ -43,7 +44,7 @@ function log(msg) {
     if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
 }
 
-// --- HUD RENDERING ---
+// --- 1. THE FLOATING HUD (PICTURE-IN-PICTURE) ---
 async function startPiP() {
     const canvas = document.getElementById('pip-canvas');
     const video = document.getElementById('pip-video');
@@ -52,25 +53,34 @@ async function startPiP() {
     video.srcObject = stream;
 
     const drawLoop = () => {
+        // Clear background every frame
         ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        ctx.font = "bold 20px Consolas";
+        // Header
+        ctx.font = "bold 22px Consolas";
         ctx.fillStyle = "#ff6600";
-        ctx.fillText("📡 SQUAD STATUS", 20, 35);
+        ctx.fillText("📡 SQUAD STATUS", 25, 40);
         ctx.strokeStyle = "#444"; 
-        ctx.strokeRect(15, 45, 570, 1);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(20, 55, 560, 1);
 
-        let y = 85;
-        const rawLines = document.getElementById('list-content').innerText.split('\n');
+        // Grid Drawing Logic
+        let yPos = 100;
+        const rawContent = document.getElementById('list-content').innerText;
+        if (!rawContent) return requestAnimationFrame(drawLoop);
+
+        const lines = rawContent.split('\n');
         
-        rawLines.forEach(line => {
-            if(!line || line.trim() === "" || line.includes("undefined")) return;
+        lines.forEach(line => {
+            const trimmed = line.trim();
+            if(!trimmed || trimmed === "" || trimmed.includes("undefined")) return;
 
-            if (line.includes("INCAP")) {
+            // COLOR CODING
+            if (trimmed.includes("INCAP")) {
                 ctx.fillStyle = "#ff4444";
                 ctx.font = "bold 18px Consolas";
-            } else if (line.includes("RESPAWN")) {
+            } else if (trimmed.includes("RESPAWN")) {
                 ctx.fillStyle = "#ffff00";
                 ctx.font = "18px Consolas";
             } else {
@@ -78,18 +88,20 @@ async function startPiP() {
                 ctx.font = "18px Consolas";
             }
 
-            ctx.fillText(line.trim(), 20, y);
-            y += 45; 
+            // Draw each player on a fresh line
+            ctx.fillText(trimmed, 25, yPos);
+            yPos += 45; // Force vertical separation so names don't merge
         });
+
         requestAnimationFrame(drawLoop);
     };
     drawLoop();
-    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error."); }
+    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error: Click button again."); }
 }
 
-// --- ENGINE ---
+// --- 2. THE SCANNING ENGINE ---
 async function startMonitoring() {
-    log("Requesting Capture...");
+    log("Initializing Capture...");
     try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
         document.getElementById('video').srcObject = stream;
@@ -118,7 +130,7 @@ async function scanLoop() {
     }
 
     let currentStatus = "ALIVE";
-    if (darkCount > (sampleSize * sampleSize * 0.8)) {
+    if (darkCount > (sampleSize * sampleSize * 0.85)) {
         currentStatus = "RESPAWNING";
         respawnStartTime = Date.now();
     }
@@ -127,7 +139,7 @@ async function scanLoop() {
     ocrCounter++;
 
     if (currentStatus === "ALIVE" && ocrCounter % throttleVal === 0) {
-        // INCAP CHECK
+        // INCAP CHECK (Bottom 25%)
         const ocrCanvas = document.createElement('canvas');
         ocrCanvas.width = canvas.width; ocrCanvas.height = canvas.height/4;
         ocrCanvas.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
@@ -136,8 +148,8 @@ async function scanLoop() {
             if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
         } catch(e) {}
 
-        // ZONE CHECK
-        const infoW = canvas.width * 0.40;
+        // ZONE CHECK (Top Right)
+        const infoW = canvas.width * 0.35;
         const infoH = 150;
         const infoCanvas = document.createElement('canvas');
         infoCanvas.width = infoW; infoCanvas.height = infoH;
@@ -160,12 +172,7 @@ async function scanLoop() {
 function updateSheet(status, loc) {
     const url = document.getElementById('gUrl').value;
     if(!url) return;
-    const body = { 
-        player_name: document.getElementById('pName').value, 
-        group_code: document.getElementById('gCode').value, 
-        status: status, 
-        location: loc 
-    };
+    const body = { player_name: document.getElementById('pName').value, group_code: document.getElementById('gCode').value, status: status, location: loc };
     fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
 }
 
@@ -177,13 +184,15 @@ async function refreshLoop() {
         const res = await fetch(`${url}?group=${group}`);
         const data = await res.json();
         
-        // FORMAT: Name | Location | Status
-        document.getElementById('list-content').innerText = Object.entries(data).map(([name, val]) => {
+        // RECONSTRUCT LINE: Name | Location | Status
+        let output = "";
+        for (const [name, val] of Object.entries(data)) {
             const parts = val.split('|');
             const status = parts[0] ? parts[0].trim() : "ALIVE";
             const location = parts[1] ? parts[1].trim() : "UNKNOWN";
-            return `${name} | ${location} | ${status}`;
-        }).join('\n');
+            output += `${name} | ${location} | ${status}\n`; // Force newline here
+        }
+        document.getElementById('list-content').innerText = output;
     } catch(e) {}
 }
 </script>
