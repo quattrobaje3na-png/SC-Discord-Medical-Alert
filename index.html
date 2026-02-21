@@ -1,17 +1,17 @@
-<div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:100px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
-    [SYSTEM READY] - Optimized display active.
+<div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:80px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
+    [SYSTEM READY] - Displaying: Name | Location | Status
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
     <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <input type="text" id="gCode" placeholder="Group Code" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     
     <div style="margin-bottom:10px; font-size:12px; display:flex; align-items:center; gap:10px;">
         <label>Performance:</label>
         <select id="perfMode" style="background:#222; color:#fff; border:1px solid #444; padding:2px;">
-            <option value="4">High Performance</option>
-            <option value="16" selected>Battery Saver</option>
+            <option value="4">High (Fast Scan)</option>
+            <option value="16" selected>Battery Saver (Slow Scan)</option>
         </select>
     </div>
 
@@ -24,9 +24,10 @@
 </div>
 
 <div id="list-content" style="display:none;"></div>
+
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
-<canvas id="pip-canvas" width="450" height="250" style="display:none;"></canvas>
+<canvas id="pip-canvas" width="600" height="350" style="display:none;"></canvas>
 <video id="pip-video" autoplay muted style="display:none;"></video>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -43,6 +44,7 @@ function log(msg) {
     if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
 }
 
+// --- 1. THE FLOATING HUD (PiP) ---
 async function startPiP() {
     const canvas = document.getElementById('pip-canvas');
     const video = document.getElementById('pip-video');
@@ -52,30 +54,43 @@ async function startPiP() {
     video.muted = true;
 
     const drawLoop = () => {
-        ctx.fillStyle = "#0a0a0a";
+        ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.font = "bold 18px Consolas";
+        
+        ctx.font = "bold 20px Consolas";
         ctx.fillStyle = "#ff6600";
-        ctx.fillText("📡 SQUAD MONITOR", 15, 30);
-        ctx.strokeStyle = "#333"; ctx.strokeRect(10, 40, 430, 1);
+        ctx.fillText("📡 SQUAD STATUS", 20, 35);
+        ctx.strokeStyle = "#444"; 
+        ctx.strokeRect(15, 45, 570, 1);
 
-        let y = 75;
-        const entries = document.getElementById('list-content').innerText.split('\n');
-        entries.forEach(line => {
-            if(!line || line.trim() === "") return;
-            
-            // Cleanup: Only display "Name | Status | Location"
-            ctx.fillStyle = line.includes("INCAP") ? "#ff4444" : (line.includes("RESPAWN") ? "#ffff00" : "#44ff44");
-            ctx.font = "bold 15px Consolas";
-            ctx.fillText(line, 15, y);
-            y += 30;
+        let y = 85;
+        const rawLines = document.getElementById('list-content').innerText.split('\n');
+        
+        rawLines.forEach(line => {
+            if(!line || line.trim() === "" || line.includes("undefined")) return;
+
+            // DYNAMIC COLOR CODING
+            if (line.includes("INCAP")) {
+                ctx.fillStyle = "#ff4444";
+                ctx.font = "bold 18px Consolas";
+            } else if (line.includes("RESPAWN")) {
+                ctx.fillStyle = "#ffff00";
+                ctx.font = "18px Consolas";
+            } else {
+                ctx.fillStyle = "#44ff44";
+                ctx.font = "18px Consolas";
+            }
+
+            ctx.fillText(line.trim(), 20, y);
+            y += 40; // Increased spacing for readability
         });
         requestAnimationFrame(drawLoop);
     };
     drawLoop();
-    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error."); }
+    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error: Re-click HUD."); }
 }
 
+// --- 2. CAPTURE & DETECTION ---
 async function startMonitoring() {
     log("Initializing Scanner...");
     try {
@@ -97,6 +112,7 @@ async function scanLoop() {
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+    // PIXEL DARKNESS CHECK
     const sampleSize = 20;
     const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, sampleSize, sampleSize);
     let darkCount = 0;
@@ -114,7 +130,7 @@ async function scanLoop() {
     ocrCounter++;
 
     if (currentStatus === "ALIVE" && ocrCounter % throttleVal === 0) {
-        // Incap Check
+        // INCAP CHECK (Bottom)
         const ocrCanvas = document.createElement('canvas');
         ocrCanvas.width = canvas.width; ocrCanvas.height = canvas.height/4;
         ocrCanvas.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
@@ -123,7 +139,7 @@ async function scanLoop() {
             if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
         } catch(e) {}
 
-        // Zone Check
+        // ZONE CHECK (Top Right)
         const infoW = canvas.width * 0.35;
         const infoH = 120;
         const infoCanvas = document.createElement('canvas');
@@ -139,16 +155,13 @@ async function scanLoop() {
     if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) currentStatus = "RESPAWNING";
 
     if (currentStatus !== lastStatus || ocrCounter % throttleVal === 0) {
-        updateSheet(currentStatus, lastLocation);
+        const url = document.getElementById('gUrl').value;
+        if(url) {
+            const body = { player_name: document.getElementById('pName').value, group_code: document.getElementById('gCode').value, status: currentStatus, location: lastLocation };
+            fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
+        }
         lastStatus = currentStatus;
     }
-}
-
-function updateSheet(status, loc) {
-    const url = document.getElementById('gUrl').value;
-    if(!url) return;
-    const body = { player_name: document.getElementById('pName').value, group_code: document.getElementById('gCode').value, status: status, location: loc, session_info: "N/A" };
-    fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
 }
 
 async function refreshLoop() {
@@ -158,13 +171,13 @@ async function refreshLoop() {
     try {
         const res = await fetch(`${url}?group=${group}`);
         const data = await res.json();
-        // CLEANUP: Extract only Status and Location from the value string
-        document.getElementById('list-content').innerText = Object.entries(data).map(([n, s]) => {
-            // Removes any "Shard" or "N/A" extra data that might be in the string
-            const parts = s.split('|');
-            const status = parts[0].trim();
-            const location = parts[parts.length - 1].trim();
-            return `${n} | ${status} | ${location}`;
+        
+        // STRICT FORMATTING: Name | Location | Status
+        document.getElementById('list-content').innerText = Object.entries(data).map(([name, val]) => {
+            const parts = val.split('|');
+            const status = parts[0] ? parts[0].trim() : "ALIVE";
+            const location = parts[1] ? parts[1].trim() : "UNKNOWN";
+            return `${name} | ${location} | ${status}`;
         }).join('\n');
     } catch(e) {}
 }
