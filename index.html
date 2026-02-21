@@ -19,7 +19,7 @@
 
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
-<canvas id="pip-canvas" width="300" height="200" style="display:none;"></canvas>
+<canvas id="pip-canvas" width="400" height="250" style="display:none;"></canvas>
 <video id="pip-video" autoplay muted style="display:none;"></video>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -27,6 +27,7 @@
 <script>
 let lastStatus = "ALIVE";
 let lastSession = "UNKNOWN";
+let lastLocation = "UNKNOWN";
 let respawnStartTime = 0;
 const COOLDOWN = 30000;
 
@@ -35,51 +36,53 @@ function log(msg) {
     if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
 }
 
-// --- 1. PICTURE-IN-PICTURE HUD ---
+// --- 1. FLOATING PiP HUD ---
 async function startPiP() {
     const canvas = document.getElementById('pip-canvas');
     const video = document.getElementById('pip-video');
     const ctx = canvas.getContext('2d');
-    const stream = canvas.captureStream();
+    const stream = canvas.captureStream(10);
     video.srcObject = stream;
+    video.muted = true;
 
-    setInterval(() => {
+    const drawLoop = () => {
         ctx.fillStyle = "#0a0a0a";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.font = "bold 14px Consolas";
+        ctx.font = "bold 16px Consolas";
         ctx.fillStyle = "#ff6600";
-        ctx.fillText("-- SQUAD STATUS --", 10, 25);
+        ctx.fillText("📡 SQUAD STATUS", 10, 25);
+        ctx.strokeStyle = "#333"; ctx.strokeRect(5, 35, 390, 1);
 
-        let y = 50;
-        const textData = document.getElementById('list-content').innerText;
-        const entries = textData.split('\n');
-        
+        let y = 60;
+        const entries = document.getElementById('list-content').innerText.split('\n');
         entries.forEach(line => {
             if(!line || line.trim() === "") return;
             ctx.fillStyle = line.includes("INCAP") ? "#ff4444" : (line.includes("RESPAWN") ? "#ffff00" : "#44ff44");
+            ctx.font = line.includes("INCAP") ? "bold 15px Consolas" : "14px Consolas";
             ctx.fillText(line, 10, y);
-            y += 22;
+            y += 24;
         });
-    }, 1000);
+        requestAnimationFrame(drawLoop);
+    };
+    drawLoop();
 
     try {
         await video.play();
         await video.requestPictureInPicture();
-        log("Floating HUD enabled.");
-    } catch (e) { log("PiP Error: Use Chrome/Edge."); }
+    } catch (e) { log("PiP Error: Check browser permissions."); }
 }
 
-// --- 2. CAPTURE & OCR ENGINE ---
+// --- 2. CAPTURE & OCR SCANNING ---
 async function startMonitoring() {
-    log("Requesting Screen Capture...");
+    log("Requesting Capture...");
     try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
         document.getElementById('video').srcObject = stream;
         document.getElementById('pipBtn').style.display = "block";
-        log("Capture ACTIVE. Monitoring QR & Status.");
+        log("Capture ACTIVE. Scanning info feed.");
         
-        setInterval(scanLoop, 4000);
-        setInterval(refreshLoop, 5000);
+        setInterval(scanLoop, 4000); // OCR Scan
+        setInterval(refreshLoop, 5000); // HUD Update
     } catch (err) { log("Capture Failed: " + err.message); }
 }
 
@@ -93,28 +96,33 @@ async function scanLoop() {
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // QR/SESSION TRACKING (Top Right)
-    let sessionID = "UNKNOWN";
-    const qrRegion = canvas.width * 0.25;
-    const qrCanvas = document.createElement('canvas');
-    qrCanvas.width = qrRegion; qrCanvas.height = 120;
-    qrCanvas.getContext('2d').drawImage(canvas, canvas.width - qrRegion, 0, qrRegion, 120, 0, 0, qrRegion, 120);
+    // CROP INFO FEED (Top Right)
+    const infoW = canvas.width * 0.35;
+    const infoH = canvas.height * 0.35;
+    const infoCanvas = document.createElement('canvas');
+    infoCanvas.width = infoW; infoCanvas.height = infoH;
+    infoCanvas.getContext('2d').drawImage(canvas, canvas.width - infoW, 0, infoW, infoH, 0, 0, infoW, infoH);
     
+    let sessionID = "UNKNOWN";
+    let locationName = "SPACE";
+
     try {
-        const { data: { text } } = await Tesseract.recognize(qrCanvas, 'eng');
-        const match = text.match(/[A-Z0-9]{5,}/); 
-        if(match) sessionID = match[0];
+        const { data: { text } } = await Tesseract.recognize(infoCanvas, 'eng');
+        const shardMatch = text.match(/shard\s(\d+)/i);
+        if(shardMatch) sessionID = "Shard " + shardMatch[1];
+        const locMatch = text.match(/location\s*:\s*(.*)/i);
+        if(locMatch) locationName = locMatch[1].split('(')[0].trim();
     } catch(e) {}
 
-    // STATUS TRACKING
+    // INCAP CHECK
     let currentStatus = "ALIVE";
     const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let dark = 0;
-    for (let i = 0; i < frame.data.length; i += 40) {
+    for (let i = 0; i < frame.data.length; i += 50) {
         if (frame.data[i] < 15 && frame.data[i+1] < 15 && frame.data[i+2] < 15) dark++;
     }
 
-    if ((dark / (frame.data.length / 40)) > 0.90) {
+    if ((dark / (frame.data.length / 50)) > 0.90) {
         currentStatus = "RESPAWNING";
         respawnStartTime = Date.now();
     } else {
@@ -129,24 +137,25 @@ async function scanLoop() {
 
     if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) currentStatus = "RESPAWNING";
 
-    if (currentStatus !== lastStatus || sessionID !== lastSession) {
-        updateSheet(currentStatus, sessionID);
-        lastStatus = currentStatus;
-        lastSession = sessionID;
+    if (currentStatus !== lastStatus || sessionID !== lastSession || locationName !== lastLocation) {
+        updateSheet(currentStatus, sessionID, locationName);
+        lastStatus = currentStatus; lastSession = sessionID; lastLocation = locationName;
     }
 }
 
-// --- 3. GOOGLE SHEETS SYNC ---
-function updateSheet(status, session) {
+// --- 3. DATA SYNC ---
+function updateSheet(status, session, loc) {
     const url = document.getElementById('gUrl').value;
+    if(!url) return;
     const body = {
         player_name: document.getElementById('pName').value,
         group_code: document.getElementById('gCode').value,
         status: status,
-        session_info: session
+        session_info: session,
+        location: loc
     };
     fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
-    log(`Sync: ${status} | ${session}`);
+    log(`Sync: ${status} | ${session} | ${loc}`);
 }
 
 async function refreshLoop() {
