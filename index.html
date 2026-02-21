@@ -1,16 +1,16 @@
-<div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:100px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333;">
-    [SYSTEM READY] - Awaiting library...
+<div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:100px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
+    [SYSTEM READY] - Awaiting user input...
 </div>
 
-<div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace;">
-    <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:5px;">
-    <input type="text" id="gCode" placeholder="Group Code" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:5px;">
-    <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+<div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
+    <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     
-    <button onclick="startMonitoring()" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:10px; border:none; cursor:pointer; margin-bottom:5px;">
+    <button onclick="startMonitoring()" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; margin-bottom:5px;">
         1. START CAPTURE
     </button>
-    <button onclick="startPiP()" id="pipBtn" style="width:100%; background:#00ffee; color:#000; font-weight:bold; padding:10px; border:none; cursor:pointer; display:none;">
+    <button onclick="startPiP()" id="pipBtn" style="width:100%; background:#00ffee; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; display:none;">
         2. ENABLE FLOATING HUD
     </button>
 </div>
@@ -32,8 +32,7 @@ const COOLDOWN = 30000;
 
 function log(msg) {
     const d = document.getElementById('debug-log');
-    d.innerHTML += "<br>> " + msg;
-    d.scrollTop = d.scrollHeight;
+    if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
 }
 
 // --- 1. PICTURE-IN-PICTURE HUD ---
@@ -52,29 +51,32 @@ async function startPiP() {
         ctx.fillText("-- SQUAD STATUS --", 10, 25);
 
         let y = 50;
-        const entries = document.getElementById('list-content').innerText.split('\n');
+        const textData = document.getElementById('list-content').innerText;
+        const entries = textData.split('\n');
+        
         entries.forEach(line => {
-            if(line.trim() === "") return;
-            ctx.fillStyle = line.includes("INCAP") ? "#ff0000" : (line.includes("RESPAWN") ? "#ffff00" : "#00ff00");
+            if(!line || line.trim() === "") return;
+            ctx.fillStyle = line.includes("INCAP") ? "#ff4444" : (line.includes("RESPAWN") ? "#ffff00" : "#44ff44");
             ctx.fillText(line, 10, y);
-            y += 20;
+            y += 22;
         });
     }, 1000);
 
     try {
         await video.play();
         await video.requestPictureInPicture();
-    } catch (e) { log("PiP Error: Use Chrome/Edge/Safari"); }
+        log("Floating HUD enabled.");
+    } catch (e) { log("PiP Error: Use Chrome/Edge."); }
 }
 
-// --- 2. MAIN CAPTURE & SCANNING ---
+// --- 2. CAPTURE & OCR ENGINE ---
 async function startMonitoring() {
-    log("Initializing Scanner...");
+    log("Requesting Screen Capture...");
     try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
         document.getElementById('video').srcObject = stream;
         document.getElementById('pipBtn').style.display = "block";
-        log("Scanner Active. Ready for PiP.");
+        log("Capture ACTIVE. Monitoring QR & Status.");
         
         setInterval(scanLoop, 4000);
         setInterval(refreshLoop, 5000);
@@ -91,24 +93,24 @@ async function scanLoop() {
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // --- QR SCAN (Top Right) ---
+    // QR/SESSION TRACKING (Top Right)
+    let sessionID = "UNKNOWN";
     const qrRegion = canvas.width * 0.25;
     const qrCanvas = document.createElement('canvas');
     qrCanvas.width = qrRegion; qrCanvas.height = 120;
     qrCanvas.getContext('2d').drawImage(canvas, canvas.width - qrRegion, 0, qrRegion, 120, 0, 0, qrRegion, 120);
     
-    let sessionID = "UNKNOWN";
     try {
         const { data: { text } } = await Tesseract.recognize(qrCanvas, 'eng');
-        const match = text.match(/[A-Z0-9]{5,}/); // Look for session-like strings
+        const match = text.match(/[A-Z0-9]{5,}/); 
         if(match) sessionID = match[0];
     } catch(e) {}
 
-    // --- STATUS SCAN (Incap/Black) ---
+    // STATUS TRACKING
     let currentStatus = "ALIVE";
     const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let dark = 0;
-    for (let i = 0; i < frame.data.length; i += 40) { // Sampled for speed
+    for (let i = 0; i < frame.data.length; i += 40) {
         if (frame.data[i] < 15 && frame.data[i+1] < 15 && frame.data[i+2] < 15) dark++;
     }
 
@@ -134,7 +136,7 @@ async function scanLoop() {
     }
 }
 
-// --- 3. DATA SYNC ---
+// --- 3. GOOGLE SHEETS SYNC ---
 function updateSheet(status, session) {
     const url = document.getElementById('gUrl').value;
     const body = {
@@ -144,12 +146,13 @@ function updateSheet(status, session) {
         session_info: session
     };
     fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
-    log(`Update sent: ${status} (${session})`);
+    log(`Sync: ${status} | ${session}`);
 }
 
 async function refreshLoop() {
     const url = document.getElementById('gUrl').value;
     const group = document.getElementById('gCode').value;
+    if(!url || !group) return;
     try {
         const res = await fetch(`${url}?group=${group}`);
         const data = await res.json();
