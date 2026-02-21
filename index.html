@@ -1,5 +1,5 @@
 <div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:100px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
-    [SYSTEM READY] - Select mode and Start Capture...
+    [SYSTEM READY] - Optimized display active.
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
@@ -10,8 +10,8 @@
     <div style="margin-bottom:10px; font-size:12px; display:flex; align-items:center; gap:10px;">
         <label>Performance:</label>
         <select id="perfMode" style="background:#222; color:#fff; border:1px solid #444; padding:2px;">
-            <option value="4">High (4s OCR)</option>
-            <option value="16" selected>Battery Saver (16s OCR)</option>
+            <option value="4">High Performance</option>
+            <option value="16" selected>Battery Saver</option>
         </select>
     </div>
 
@@ -26,7 +26,7 @@
 <div id="list-content" style="display:none;"></div>
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
-<canvas id="pip-canvas" width="400" height="250" style="display:none;"></canvas>
+<canvas id="pip-canvas" width="450" height="250" style="display:none;"></canvas>
 <video id="pip-video" autoplay muted style="display:none;"></video>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -54,18 +54,21 @@ async function startPiP() {
     const drawLoop = () => {
         ctx.fillStyle = "#0a0a0a";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.font = "bold 16px Consolas";
+        ctx.font = "bold 18px Consolas";
         ctx.fillStyle = "#ff6600";
-        ctx.fillText("📡 SQUAD MONITOR", 10, 25);
-        ctx.strokeStyle = "#333"; ctx.strokeRect(5, 35, 390, 1);
+        ctx.fillText("📡 SQUAD MONITOR", 15, 30);
+        ctx.strokeStyle = "#333"; ctx.strokeRect(10, 40, 430, 1);
 
-        let y = 65;
+        let y = 75;
         const entries = document.getElementById('list-content').innerText.split('\n');
         entries.forEach(line => {
             if(!line || line.trim() === "") return;
+            
+            // Cleanup: Only display "Name | Status | Location"
             ctx.fillStyle = line.includes("INCAP") ? "#ff4444" : (line.includes("RESPAWN") ? "#ffff00" : "#44ff44");
-            ctx.fillText(line, 10, y);
-            y += 28;
+            ctx.font = "bold 15px Consolas";
+            ctx.fillText(line, 15, y);
+            y += 30;
         });
         requestAnimationFrame(drawLoop);
     };
@@ -79,8 +82,6 @@ async function startMonitoring() {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
         document.getElementById('video').srcObject = stream;
         document.getElementById('pipBtn').style.display = "block";
-        
-        // Fast Pixel Check runs every 4s regardless of OCR setting
         setInterval(scanLoop, 4000); 
         setInterval(refreshLoop, 5000);
     } catch (err) { log("Capture Failed: " + err.message); }
@@ -96,7 +97,6 @@ async function scanLoop() {
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // 1. PIXEL CHECK (Constant & Low Impact)
     const sampleSize = 20;
     const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, sampleSize, sampleSize);
     let darkCount = 0;
@@ -110,28 +110,25 @@ async function scanLoop() {
         respawnStartTime = Date.now();
     }
 
-    // 2. OCR THROTTLING
     const throttleVal = parseInt(document.getElementById('perfMode').value) / 4;
     ocrCounter++;
 
     if (currentStatus === "ALIVE" && ocrCounter % throttleVal === 0) {
-        // Run Incap Scan
+        // Incap Check
         const ocrCanvas = document.createElement('canvas');
         ocrCanvas.width = canvas.width; ocrCanvas.height = canvas.height/4;
         ocrCanvas.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
-        
         try {
             const { data: { text } } = await Tesseract.recognize(ocrCanvas, 'eng');
             if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
         } catch(e) {}
 
-        // Run Zone Scan
+        // Zone Check
         const infoW = canvas.width * 0.35;
         const infoH = 120;
         const infoCanvas = document.createElement('canvas');
         infoCanvas.width = infoW; infoCanvas.height = infoH;
         infoCanvas.getContext('2d').drawImage(canvas, canvas.width - infoW, 0, infoW, infoH, 0, 0, infoW, infoH);
-        
         try {
             const { data: { text: zoneText } } = await Tesseract.recognize(infoCanvas, 'eng');
             const locMatch = zoneText.match(/location\s*[:;]\s*([^\(]+)/i);
@@ -161,7 +158,14 @@ async function refreshLoop() {
     try {
         const res = await fetch(`${url}?group=${group}`);
         const data = await res.json();
-        document.getElementById('list-content').innerText = Object.entries(data).map(([n, s]) => `${n}: ${s}`).join('\n');
+        // CLEANUP: Extract only Status and Location from the value string
+        document.getElementById('list-content').innerText = Object.entries(data).map(([n, s]) => {
+            // Removes any "Shard" or "N/A" extra data that might be in the string
+            const parts = s.split('|');
+            const status = parts[0].trim();
+            const location = parts[parts.length - 1].trim();
+            return `${n} | ${status} | ${location}`;
+        }).join('\n');
     } catch(e) {}
 }
 </script>
