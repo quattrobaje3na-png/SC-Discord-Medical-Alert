@@ -1,5 +1,5 @@
 <div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:80px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
-    [SYSTEM READY] - Displaying: Name | Location | Status
+    [SYSTEM READY] - Master Build v10.0 Active.
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
@@ -10,8 +10,8 @@
     <div style="margin-bottom:10px; font-size:12px; display:flex; align-items:center; gap:10px;">
         <label>Performance:</label>
         <select id="perfMode" style="background:#222; color:#fff; border:1px solid #444; padding:2px;">
-            <option value="4">High (Fast Scan)</option>
-            <option value="16" selected>Battery Saver (Slow Scan)</option>
+            <option value="4">High Performance (4s)</option>
+            <option value="16" selected>Battery Saver (16s)</option>
         </select>
     </div>
 
@@ -24,10 +24,9 @@
 </div>
 
 <div id="list-content" style="display:none;"></div>
-
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
-<canvas id="pip-canvas" width="600" height="350" style="display:none;"></canvas>
+<canvas id="pip-canvas" width="600" height="400" style="display:none;"></canvas>
 <video id="pip-video" autoplay muted style="display:none;"></video>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -44,14 +43,13 @@ function log(msg) {
     if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
 }
 
-// --- 1. THE FLOATING HUD (PiP) ---
+// --- HUD RENDERING ---
 async function startPiP() {
     const canvas = document.getElementById('pip-canvas');
     const video = document.getElementById('pip-video');
     const ctx = canvas.getContext('2d');
     const stream = canvas.captureStream(10);
     video.srcObject = stream;
-    video.muted = true;
 
     const drawLoop = () => {
         ctx.fillStyle = "#000000";
@@ -69,7 +67,6 @@ async function startPiP() {
         rawLines.forEach(line => {
             if(!line || line.trim() === "" || line.includes("undefined")) return;
 
-            // DYNAMIC COLOR CODING
             if (line.includes("INCAP")) {
                 ctx.fillStyle = "#ff4444";
                 ctx.font = "bold 18px Consolas";
@@ -82,17 +79,17 @@ async function startPiP() {
             }
 
             ctx.fillText(line.trim(), 20, y);
-            y += 40; // Increased spacing for readability
+            y += 45; 
         });
         requestAnimationFrame(drawLoop);
     };
     drawLoop();
-    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error: Re-click HUD."); }
+    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error."); }
 }
 
-// --- 2. CAPTURE & DETECTION ---
+// --- ENGINE ---
 async function startMonitoring() {
-    log("Initializing Scanner...");
+    log("Requesting Capture...");
     try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
         document.getElementById('video').srcObject = stream;
@@ -130,7 +127,7 @@ async function scanLoop() {
     ocrCounter++;
 
     if (currentStatus === "ALIVE" && ocrCounter % throttleVal === 0) {
-        // INCAP CHECK (Bottom)
+        // INCAP CHECK
         const ocrCanvas = document.createElement('canvas');
         ocrCanvas.width = canvas.width; ocrCanvas.height = canvas.height/4;
         ocrCanvas.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
@@ -139,9 +136,9 @@ async function scanLoop() {
             if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
         } catch(e) {}
 
-        // ZONE CHECK (Top Right)
-        const infoW = canvas.width * 0.35;
-        const infoH = 120;
+        // ZONE CHECK
+        const infoW = canvas.width * 0.40;
+        const infoH = 150;
         const infoCanvas = document.createElement('canvas');
         infoCanvas.width = infoW; infoCanvas.height = infoH;
         infoCanvas.getContext('2d').drawImage(canvas, canvas.width - infoW, 0, infoW, infoH, 0, 0, infoW, infoH);
@@ -155,13 +152,21 @@ async function scanLoop() {
     if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) currentStatus = "RESPAWNING";
 
     if (currentStatus !== lastStatus || ocrCounter % throttleVal === 0) {
-        const url = document.getElementById('gUrl').value;
-        if(url) {
-            const body = { player_name: document.getElementById('pName').value, group_code: document.getElementById('gCode').value, status: currentStatus, location: lastLocation };
-            fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
-        }
+        updateSheet(currentStatus, lastLocation);
         lastStatus = currentStatus;
     }
+}
+
+function updateSheet(status, loc) {
+    const url = document.getElementById('gUrl').value;
+    if(!url) return;
+    const body = { 
+        player_name: document.getElementById('pName').value, 
+        group_code: document.getElementById('gCode').value, 
+        status: status, 
+        location: loc 
+    };
+    fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
 }
 
 async function refreshLoop() {
@@ -172,7 +177,7 @@ async function refreshLoop() {
         const res = await fetch(`${url}?group=${group}`);
         const data = await res.json();
         
-        // STRICT FORMATTING: Name | Location | Status
+        // FORMAT: Name | Location | Status
         document.getElementById('list-content').innerText = Object.entries(data).map(([name, val]) => {
             const parts = val.split('|');
             const status = parts[0] ? parts[0].trim() : "ALIVE";
