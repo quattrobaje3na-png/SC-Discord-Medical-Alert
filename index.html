@@ -1,5 +1,5 @@
 <div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:80px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
-    [SYSTEM READY] - Object-Array Enforcement Active.
+    [SYSTEM READY] - Direct Web Display Active.
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
@@ -7,108 +7,54 @@
     <input type="text" id="gCode" placeholder="Group Code" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     
-    <div style="margin-bottom:10px; font-size:12px; display:flex; align-items:center; gap:10px;">
-        <label>Scan Speed:</label>
-        <select id="perfMode" style="background:#222; color:#fff; border:1px solid #444; padding:2px;">
-            <option value="4">High Performance (4s)</option>
-            <option value="16" selected>Battery Saver (16s)</option>
-        </select>
-    </div>
+    <button onclick="startMonitoring()" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; margin-bottom:10px;">
+        START CAPTURE & MONITOR
+    </button>
 
-    <button onclick="startMonitoring()" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; margin-bottom:5px;">
-        1. START CAPTURE
-    </button>
-    <button onclick="startPiP()" id="pipBtn" style="width:100%; background:#00ffee; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; display:none;">
-        2. ENABLE FLOATING HUD
-    </button>
+    <div style="margin-top:20px; border-top:2px solid #444; padding-top:15px;">
+        <h3 style="margin:0 0 10px 0; font-size:16px; color:#00ffee;">📡 SQUAD STATUS</h3>
+        <table style="width:100%; border-collapse: collapse; font-family: Consolas, monospace; color: #fff; text-align: left;">
+            <thead>
+                <tr style="border-bottom: 1px solid #444; color: #ff6600; font-size: 14px;">
+                    <th style="padding: 10px;">NAME</th>
+                    <th style="padding: 10px;">LOCATION</th>
+                    <th style="padding: 10px;">STATUS</th>
+                </tr>
+            </thead>
+            <tbody id="squad-list-body">
+                <tr><td colspan="3" style="padding:20px; text-align:center; color:#666;">Waiting for data...</td></tr>
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
-<canvas id="pip-canvas" width="650" height="450" style="display:none;"></canvas>
-<video id="pip-video" autoplay muted style="display:none;"></video>
-
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <script>
 let lastStatus = "ALIVE";
 let lastLocation = "UNKNOWN";
 let respawnStartTime = 0;
-let ocrCounter = 0;
 const COOLDOWN = 25000;
-
-// This is the "Master List" that prevents names from merging
-let squadData = []; 
 
 function log(msg) {
     const d = document.getElementById('debug-log');
     if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
 }
 
-// --- 1. THE FLOATING HUD ENGINE ---
-async function startPiP() {
-    const canvas = document.getElementById('pip-canvas');
-    const video = document.getElementById('pip-video');
-    const ctx = canvas.getContext('2d');
-    const stream = canvas.captureStream(10);
-    video.srcObject = stream;
-
-    const drawLoop = () => {
-        // Clear Screen
-        ctx.fillStyle = "#000000";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Header
-        ctx.font = "bold 22px Consolas";
-        ctx.fillStyle = "#ff6600";
-        ctx.fillText("📡 SQUAD STATUS", 25, 40);
-        ctx.strokeStyle = "#444"; 
-        ctx.lineWidth = 2;
-        ctx.strokeRect(20, 55, 610, 1);
-
-        // Render Row-by-Row from the Array
-        let yPos = 100; 
-        
-        squadData.forEach((member) => {
-            // Pick color based on member status
-            if (member.status.includes("INCAP")) {
-                ctx.fillStyle = "#ff4444";
-                ctx.font = "bold 18px Consolas";
-            } else if (member.status.includes("RESPAWN")) {
-                ctx.fillStyle = "#ffff00";
-                ctx.font = "18px Consolas";
-            } else {
-                ctx.fillStyle = "#44ff44";
-                ctx.font = "18px Consolas";
-            }
-
-            // ENFORCED FORMAT: NAME | LOCATION | STATUS
-            const lineText = `${member.name} | ${member.location} | ${member.status}`;
-            ctx.fillText(lineText, 25, yPos);
-            
-            // Move cursor down 50 pixels for the next name
-            yPos += 50; 
-        });
-
-        requestAnimationFrame(drawLoop);
-    };
-    drawLoop();
-    try { 
-        await video.play(); 
-        await video.requestPictureInPicture(); 
-    } catch (e) { log("PiP Error: Make sure your browser supports PiP."); }
-}
-
-// --- 2. GAME SCANNING LOGIC ---
 async function startMonitoring() {
     log("Initializing Capture...");
     try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
         document.getElementById('video').srcObject = stream;
-        document.getElementById('pipBtn').style.display = "block";
+        
+        // Rapid scan (4s) for combat readiness
         setInterval(scanLoop, 4000); 
-        setInterval(refreshLoop, 5000);
-    } catch (err) { log("Capture Cancelled or Failed."); }
+        // Rapid refresh (4s) for squad updates
+        setInterval(refreshLoop, 4000);
+        log("Capture Active. Monitoring Squad...");
+    } catch (err) { log("Capture Failed: " + err.message); }
 }
 
 async function scanLoop() {
@@ -121,7 +67,7 @@ async function scanLoop() {
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // DARKNESS CHECK (Fast Pixel Math)
+    // DARKNESS CHECK
     const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, 20, 20);
     let dark = 0;
     for (let i = 0; i < frame.data.length; i += 4) {
@@ -132,13 +78,8 @@ async function scanLoop() {
     if (dark > 320) {
         currentStatus = "RESPAWNING";
         respawnStartTime = Date.now();
-    }
-
-    const throttleVal = parseInt(document.getElementById('perfMode').value) / 4;
-    ocrCounter++;
-
-    if (currentStatus === "ALIVE" && ocrCounter % throttleVal === 0) {
-        // INCAP OCR (Bottom Center)
+    } else {
+        // INCAP OCR (Bottom 25%)
         const ocrC = document.createElement('canvas');
         ocrC.width = canvas.width; ocrC.height = canvas.height/4;
         ocrC.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
@@ -160,18 +101,11 @@ async function scanLoop() {
 
     if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) currentStatus = "RESPAWNING";
 
-    if (currentStatus !== lastStatus || ocrCounter % throttleVal === 0) {
-        const url = document.getElementById('gUrl').value;
-        if(url) {
-            const body = { 
-                player_name: document.getElementById('pName').value, 
-                group_code: document.getElementById('gCode').value, 
-                status: currentStatus, 
-                location: lastLocation 
-            };
-            fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
-        }
-        lastStatus = currentStatus;
+    // Update backend
+    const url = document.getElementById('gUrl').value;
+    if(url) {
+        const body = { player_name: document.getElementById('pName').value, group_code: document.getElementById('gCode').value, status: currentStatus, location: lastLocation };
+        fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
     }
 }
 
@@ -183,15 +117,25 @@ async function refreshLoop() {
         const res = await fetch(`${url}?group=${group}`);
         const data = await res.json();
         
-        // PARSE JSON INTO CLEAN OBJECT ARRAY
-        squadData = Object.entries(data).map(([name, valueString]) => {
-            const parts = valueString.split('|');
-            return {
-                name: name.trim(),
-                status: parts[0] ? parts[0].trim() : "ALIVE",
-                location: parts[1] ? parts[1].trim() : "UNKNOWN"
-            };
+        const tbody = document.getElementById('squad-list-body');
+        tbody.innerHTML = ""; // Clear existing rows
+
+        Object.entries(data).forEach(([name, val]) => {
+            const parts = val.split('|');
+            const status = parts[0] ? parts[0].trim() : "ALIVE";
+            const location = parts[1] ? parts[1].trim() : "UNKNOWN";
+
+            let color = "#44ff44";
+            if (status.includes("INCAP")) color = "#ff4444";
+            if (status.includes("RESPAWN")) color = "#ffff00";
+
+            const row = `<tr style="border-bottom: 1px solid #333; color: ${color};">
+                <td style="padding: 12px;">${name}</td>
+                <td style="padding: 12px;">${location}</td>
+                <td style="padding: 12px; font-weight: bold;">${status}</td>
+            </tr>`;
+            tbody.innerHTML += row;
         });
-    } catch(e) { log("Sync Error"); }
+    } catch(e) {}
 }
 </script>
