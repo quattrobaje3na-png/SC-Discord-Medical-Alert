@@ -1,12 +1,20 @@
 <div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:100px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
-    [SYSTEM READY] - Enter details and Start Capture...
+    [SYSTEM READY] - Select mode and Start Capture...
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
     <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gCode" placeholder="Group Code" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     
+    <div style="margin-bottom:10px; font-size:12px; display:flex; align-items:center; gap:10px;">
+        <label>Performance:</label>
+        <select id="perfMode" style="background:#222; color:#fff; border:1px solid #444; padding:2px;">
+            <option value="4">High (4s OCR)</option>
+            <option value="16" selected>Battery Saver (16s OCR)</option>
+        </select>
+    </div>
+
     <button onclick="startMonitoring()" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; margin-bottom:5px;">
         1. START CAPTURE
     </button>
@@ -16,7 +24,6 @@
 </div>
 
 <div id="list-content" style="display:none;"></div>
-
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
 <canvas id="pip-canvas" width="400" height="250" style="display:none;"></canvas>
@@ -28,14 +35,14 @@
 let lastStatus = "ALIVE";
 let lastLocation = "UNKNOWN";
 let respawnStartTime = 0;
-const COOLDOWN = 25000; // 25 seconds for respawn state
+let ocrCounter = 0;
+const COOLDOWN = 25000;
 
 function log(msg) {
     const d = document.getElementById('debug-log');
     if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
 }
 
-// --- 1. ALWAYS-ON-TOP FLOATING HUD ---
 async function startPiP() {
     const canvas = document.getElementById('pip-canvas');
     const video = document.getElementById('pip-video');
@@ -57,29 +64,23 @@ async function startPiP() {
         entries.forEach(line => {
             if(!line || line.trim() === "") return;
             ctx.fillStyle = line.includes("INCAP") ? "#ff4444" : (line.includes("RESPAWN") ? "#ffff00" : "#44ff44");
-            ctx.font = line.includes("INCAP") ? "bold 16px Consolas" : "14px Consolas";
             ctx.fillText(line, 10, y);
             y += 28;
         });
         requestAnimationFrame(drawLoop);
     };
     drawLoop();
-
-    try {
-        await video.play();
-        await video.requestPictureInPicture();
-    } catch (e) { log("PiP Error: Use Chrome or Edge."); }
+    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error."); }
 }
 
-// --- 2. THE ENGINE: CAPTURE & HYBRID DETECTION ---
 async function startMonitoring() {
     log("Initializing Scanner...");
     try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
         document.getElementById('video').srcObject = stream;
         document.getElementById('pipBtn').style.display = "block";
-        log("Capture ACTIVE. Monitoring Death & Zone.");
         
+        // Fast Pixel Check runs every 4s regardless of OCR setting
         setInterval(scanLoop, 4000); 
         setInterval(refreshLoop, 5000);
     } catch (err) { log("Capture Failed: " + err.message); }
@@ -95,84 +96,61 @@ async function scanLoop() {
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // --- STEP A: FAST PIXEL DARKNESS CHECK ---
-    // Lowered threshold to 0.80 because session info adds white pixels to the death screen
-    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    let dark = 0;
-    for (let i = 0; i < frame.data.length; i += 400) {
-        if (frame.data[i] < 20 && frame.data[i+1] < 20 && frame.data[i+2] < 20) dark++;
+    // 1. PIXEL CHECK (Constant & Low Impact)
+    const sampleSize = 20;
+    const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, sampleSize, sampleSize);
+    let darkCount = 0;
+    for (let i = 0; i < frame.data.length; i += 4) {
+        if (frame.data[i] < 25 && frame.data[i+1] < 25 && frame.data[i+2] < 25) darkCount++;
     }
-    const darknessRatio = dark / (frame.data.length / 400);
 
     let currentStatus = "ALIVE";
-
-    if (darknessRatio > 0.80) {
+    if (darkCount > (sampleSize * sampleSize * 0.8)) {
         currentStatus = "RESPAWNING";
         respawnStartTime = Date.now();
-    } else {
-        // --- STEP B: INCAPACITATED OCR (Bottom Half) ---
+    }
+
+    // 2. OCR THROTTLING
+    const throttleVal = parseInt(document.getElementById('perfMode').value) / 4;
+    ocrCounter++;
+
+    if (currentStatus === "ALIVE" && ocrCounter % throttleVal === 0) {
+        // Run Incap Scan
         const ocrCanvas = document.createElement('canvas');
-        ocrCanvas.width = canvas.width; ocrCanvas.height = canvas.height/3;
-        const ocrCtx = ocrCanvas.getContext('2d');
-        ocrCtx.drawImage(canvas, 0, canvas.height*(2/3), canvas.width, canvas.height/3, 0, 0, canvas.width, canvas.height/3);
+        ocrCanvas.width = canvas.width; ocrCanvas.height = canvas.height/4;
+        ocrCanvas.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
         
         try {
             const { data: { text } } = await Tesseract.recognize(ocrCanvas, 'eng');
-            if (text.toLowerCase().includes("incapacitated")) {
-                currentStatus = "INCAP";
-            }
+            if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
         } catch(e) {}
 
-        // --- STEP C: ZONE SCAN (Top Right - Only if NOT Incap) ---
-        if (currentStatus === "ALIVE") {
-            const infoW = canvas.width * 0.35;
-            const infoH = canvas.height * 0.30;
-            const infoCanvas = document.createElement('canvas');
-            infoCanvas.width = infoW; infoCanvas.height = infoH;
-            const iCtx = infoCanvas.getContext('2d');
-            iCtx.drawImage(canvas, canvas.width - infoW, 0, infoW, infoH, 0, 0, infoW, infoH);
-            
-            // Contrast filter for Zone Scan
-            let imgData = iCtx.getImageData(0,0,infoW,infoH);
-            for (let i=0; i<imgData.data.length; i+=4) {
-                let v = ((imgData.data[i]+imgData.data[i+1]+imgData.data[i+2])/3 > 175) ? 255 : 0;
-                imgData.data[i] = imgData.data[i+1] = imgData.data[i+2] = v;
-            }
-            iCtx.putImageData(imgData,0,0);
-
-            try {
-                const { data: { text } } = await Tesseract.recognize(infoCanvas, 'eng');
-                const locMatch = text.match(/location\s*[:;]\s*([^\(]+)/i);
-                if(locMatch && locMatch[1].trim().length > 2) {
-                    lastLocation = locMatch[1].trim(); 
-                }
-            } catch(e) {}
-        }
+        // Run Zone Scan
+        const infoW = canvas.width * 0.35;
+        const infoH = 120;
+        const infoCanvas = document.createElement('canvas');
+        infoCanvas.width = infoW; infoCanvas.height = infoH;
+        infoCanvas.getContext('2d').drawImage(canvas, canvas.width - infoW, 0, infoW, infoH, 0, 0, infoW, infoH);
+        
+        try {
+            const { data: { text: zoneText } } = await Tesseract.recognize(infoCanvas, 'eng');
+            const locMatch = zoneText.match(/location\s*[:;]\s*([^\(]+)/i);
+            if(locMatch) lastLocation = locMatch[1].trim();
+        } catch(e) {}
     }
 
-    // Reset cooldown logic
-    if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) {
-        currentStatus = "RESPAWNING";
-    }
+    if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) currentStatus = "RESPAWNING";
 
-    // --- STEP D: SYNC IF CHANGED ---
-    if (currentStatus !== lastStatus || lastLocation !== "UNKNOWN") {
+    if (currentStatus !== lastStatus || ocrCounter % throttleVal === 0) {
         updateSheet(currentStatus, lastLocation);
         lastStatus = currentStatus;
-        log(`Status: ${currentStatus} | Zone: ${lastLocation}`);
     }
 }
 
 function updateSheet(status, loc) {
     const url = document.getElementById('gUrl').value;
     if(!url) return;
-    const body = {
-        player_name: document.getElementById('pName').value,
-        group_code: document.getElementById('gCode').value,
-        status: status,
-        location: loc,
-        session_info: "N/A"
-    };
+    const body = { player_name: document.getElementById('pName').value, group_code: document.getElementById('gCode').value, status: status, location: loc, session_info: "N/A" };
     fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
 }
 
@@ -183,8 +161,7 @@ async function refreshLoop() {
     try {
         const res = await fetch(`${url}?group=${group}`);
         const data = await res.json();
-        document.getElementById('list-content').innerText = Object.entries(data)
-            .map(([n, s]) => `${n}: ${s}`).join('\n');
+        document.getElementById('list-content').innerText = Object.entries(data).map(([n, s]) => `${n}: ${s}`).join('\n');
     } catch(e) {}
 }
 </script>
