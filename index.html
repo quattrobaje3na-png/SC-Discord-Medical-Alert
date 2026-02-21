@@ -1,5 +1,5 @@
 <div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:80px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
-    [SYSTEM READY] - Master Build v10.5 Active.
+    [SYSTEM READY] - Vertical List Enforcement Active.
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
@@ -27,7 +27,7 @@
 
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
-<canvas id="pip-canvas" width="600" height="400" style="display:none;"></canvas>
+<canvas id="pip-canvas" width="650" height="500" style="display:none;"></canvas>
 <video id="pip-video" autoplay muted style="display:none;"></video>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -44,7 +44,7 @@ function log(msg) {
     if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
 }
 
-// --- 1. THE FLOATING HUD (PICTURE-IN-PICTURE) ---
+// --- 1. THE FLOATING HUD (Strict Vertical Layout) ---
 async function startPiP() {
     const canvas = document.getElementById('pip-canvas');
     const video = document.getElementById('pip-video');
@@ -53,55 +53,53 @@ async function startPiP() {
     video.srcObject = stream;
 
     const drawLoop = () => {
-        // Clear background every frame
+        // Force complete background clear
         ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        // Header
         ctx.font = "bold 22px Consolas";
         ctx.fillStyle = "#ff6600";
-        ctx.fillText("📡 SQUAD STATUS", 25, 40);
+        ctx.fillText("📡 SQUAD STATUS", 25, 45);
         ctx.strokeStyle = "#444"; 
-        ctx.lineWidth = 2;
-        ctx.strokeRect(20, 55, 560, 1);
+        ctx.strokeRect(20, 60, 610, 1);
 
-        // Grid Drawing Logic
-        let yPos = 100;
+        // Start drawing names well below the header
+        let currentY = 110; 
         const rawContent = document.getElementById('list-content').innerText;
         if (!rawContent) return requestAnimationFrame(drawLoop);
 
+        // Split by our forced newline character
         const lines = rawContent.split('\n');
         
         lines.forEach(line => {
-            const trimmed = line.trim();
-            if(!trimmed || trimmed === "" || trimmed.includes("undefined")) return;
+            if(!line.trim() || line.includes("undefined")) return;
 
-            // COLOR CODING
-            if (trimmed.includes("INCAP")) {
+            // Set color based on status in the string
+            if (line.includes("INCAP")) {
                 ctx.fillStyle = "#ff4444";
-                ctx.font = "bold 18px Consolas";
-            } else if (trimmed.includes("RESPAWN")) {
+            } else if (line.includes("RESPAWN")) {
                 ctx.fillStyle = "#ffff00";
-                ctx.font = "18px Consolas";
             } else {
                 ctx.fillStyle = "#44ff44";
-                ctx.font = "18px Consolas";
             }
 
-            // Draw each player on a fresh line
-            ctx.fillText(trimmed, 25, yPos);
-            yPos += 45; // Force vertical separation so names don't merge
+            ctx.font = "bold 18px Consolas";
+            // Draw the formatted line: Name | Location | Status
+            ctx.fillText(line.trim(), 25, currentY);
+            
+            // CRITICAL: Move the Y cursor down for the NEXT person
+            currentY += 45; 
         });
 
         requestAnimationFrame(drawLoop);
     };
     drawLoop();
-    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error: Click button again."); }
+    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error."); }
 }
 
-// --- 2. THE SCANNING ENGINE ---
+// --- 2. CAPTURE & REFRESH ---
 async function startMonitoring() {
-    log("Initializing Capture...");
+    log("Initializing Scanner...");
     try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
         document.getElementById('video').srcObject = stream;
@@ -121,7 +119,6 @@ async function scanLoop() {
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // PIXEL DARKNESS CHECK
     const sampleSize = 20;
     const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, sampleSize, sampleSize);
     let darkCount = 0;
@@ -139,7 +136,6 @@ async function scanLoop() {
     ocrCounter++;
 
     if (currentStatus === "ALIVE" && ocrCounter % throttleVal === 0) {
-        // INCAP CHECK (Bottom 25%)
         const ocrCanvas = document.createElement('canvas');
         ocrCanvas.width = canvas.width; ocrCanvas.height = canvas.height/4;
         ocrCanvas.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
@@ -148,8 +144,7 @@ async function scanLoop() {
             if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
         } catch(e) {}
 
-        // ZONE CHECK (Top Right)
-        const infoW = canvas.width * 0.35;
+        const infoW = canvas.width * 0.40;
         const infoH = 150;
         const infoCanvas = document.createElement('canvas');
         infoCanvas.width = infoW; infoCanvas.height = infoH;
@@ -184,13 +179,13 @@ async function refreshLoop() {
         const res = await fetch(`${url}?group=${group}`);
         const data = await res.json();
         
-        // RECONSTRUCT LINE: Name | Location | Status
         let output = "";
         for (const [name, val] of Object.entries(data)) {
             const parts = val.split('|');
             const status = parts[0] ? parts[0].trim() : "ALIVE";
             const location = parts[1] ? parts[1].trim() : "UNKNOWN";
-            output += `${name} | ${location} | ${status}\n`; // Force newline here
+            // FORCE NEWLINE after every player
+            output += name + " | " + location + " | " + status + "\n"; 
         }
         document.getElementById('list-content').innerText = output;
     } catch(e) {}
