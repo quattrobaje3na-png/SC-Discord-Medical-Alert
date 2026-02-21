@@ -1,143 +1,130 @@
-<div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:80px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
-    [SYSTEM READY] - HUD REMOVED. Web-only display active.
+<div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:120px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px; line-height:1.4;">
+    [SYSTEM READY] - Initializing...
 </div>
 
-<div style="background:#1a1a1a; padding:20px; border:1px solid #444; color:#ff6600; font-family:Consolas, monospace; border-radius:8px; max-width:800px; margin:0 auto;">
-    <div style="margin-bottom:15px;">
-        <input type="text" id="pName" placeholder="RSI Handle" style="width:30%; background:#222; color:#fff; border:1px solid #444; padding:10px; margin-right:2%;">
-        <input type="text" id="gCode" placeholder="Group Code" style="width:30%; background:#222; color:#fff; border:1px solid #444; padding:10px; margin-right:2%;">
-        <input type="text" id="gUrl" placeholder="Google Script URL" style="width:34%; background:#222; color:#fff; border:1px solid #444; padding:10px;">
-    </div>
+<div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
+    <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:15px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     
-    <button onclick="startMonitoring()" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:15px; border:none; cursor:pointer; font-size:16px; text-transform:uppercase; letter-spacing:1px;">
-        START MONITORING
+    <button id="finalStartBtn" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; font-family:Consolas, monospace;">
+        START CAPTURE
     </button>
-
-    <div style="margin-top:30px;">
-        <h2 style="color:#00ffee; font-size:18px; border-bottom:1px solid #333; padding-bottom:10px; margin-bottom:15px;">📡 SQUAD FEED (AUTO-REFRESHING)</h2>
-        <table style="width:100%; border-collapse: collapse; text-align: left;">
-            <thead>
-                <tr style="color: #888; font-size: 12px; text-transform: uppercase;">
-                    <th style="padding: 12px; border-bottom: 2px solid #333;">Name</th>
-                    <th style="padding: 12px; border-bottom: 2px solid #333;">Location</th>
-                    <th style="padding: 12px; border-bottom: 2px solid #333;">Status</th>
-                </tr>
-            </thead>
-            <tbody id="squad-table-body">
-                <tr><td colspan="3" style="padding:30px; text-align:center; color:#555;">No active squad data detected.</td></tr>
-            </tbody>
-        </table>
-    </div>
 </div>
 
-<video id="video" autoplay style="display:none;"></video>
+<div id="squad-list-container" style="margin-top:20px; color:#ff6600; font-family:Consolas, monospace; background:#111; border:1px solid #333; padding:10px; display:none;">
+    <h3 style="margin:0 0 10px 0; font-size:14px; border-bottom:1px solid #333;">-- SQUAD STATUS --</h3>
+    <div id="list-content"></div>
+</div>
+
+<video id="video" autoplay playsinline style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <script>
-let lastStatus = "ALIVE";
-let lastLocation = "UNKNOWN";
-let respawnStartTime = 0;
-const COOLDOWN = 25000;
+(function() {
+    // 1. DYNAMIC LIBRARY INJECTION
+    const tesseractScript = document.createElement('script');
+    tesseractScript.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    document.head.appendChild(tesseractScript);
 
-function log(msg) {
-    const d = document.getElementById('debug-log');
-    if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
-}
+    let lastStatus = "ALIVE";
+    let respawnStartTime = 0;
+    const COOLDOWN = 30000;
 
-async function startMonitoring() {
-    log("Initializing Scanner...");
-    try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
-        document.getElementById('video').srcObject = stream;
-        
-        // Scan for your own status
-        setInterval(scanLoop, 4000); 
-        // Pull squad data from Google
-        setInterval(refreshLoop, 4000);
-        
-        log("MONITORING ACTIVE.");
-    } catch (err) { log("Error: " + err.message); }
-}
-
-async function scanLoop() {
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('monitor-canvas');
-    if (video.readyState !== 4) return;
-
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Pixel Check for Black Screen (Death)
-    const frame = ctx.getImageData(canvas.width/2 - 5, canvas.height/2 - 5, 10, 10);
-    let dark = 0;
-    for (let i = 0; i < frame.data.length; i += 4) {
-        if (frame.data[i] < 20 && frame.data[i+1] < 20 && frame.data[i+2] < 20) dark++;
+    function log(msg) {
+        const d = document.getElementById('debug-log');
+        if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
     }
 
-    let currentStatus = "ALIVE";
-    if (dark > 80) {
-        currentStatus = "RESPAWNING";
-        respawnStartTime = Date.now();
-    } else {
-        // OCR for Incap (Bottom)
-        const ocrC = document.createElement('canvas');
-        ocrC.width = canvas.width; ocrC.height = canvas.height/4;
-        ocrC.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
+    tesseractScript.onload = () => {
+        log("OCR Library loaded. Ready.");
+        document.getElementById('finalStartBtn').addEventListener('click', init);
+    };
+
+    async function scanScreen() {
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('monitor-canvas');
+        if (!video || video.readyState !== 4) return;
+
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        let currentStatus = "ALIVE";
+
+        // Black Screen Check
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let dark = 0;
+        for (let i = 0; i < frame.data.length; i += 4) {
+            if (frame.data[i] < 15 && frame.data[i+1] < 15 && frame.data[i+2] < 15) dark++;
+        }
+
+        if ((dark / (frame.data.length / 4)) > 0.95) {
+            currentStatus = "RESPAWNING";
+            respawnStartTime = Date.now();
+        } else {
+            // Incap OCR Check (Bottom half)
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height / 2;
+            tempCanvas.getContext('2d').drawImage(canvas, 0, canvas.height / 2, canvas.width, canvas.height / 2, 0, 0, canvas.width, canvas.height / 2);
+            
+            try {
+                const { data: { text } } = await Tesseract.recognize(tempCanvas, 'eng');
+                if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
+            } catch(e) {}
+        }
+
+        if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) {
+            currentStatus = "RESPAWNING";
+        }
+
+        if (currentStatus !== lastStatus) {
+            const pName = document.getElementById('pName').value;
+            const gCode = document.getElementById('gCode').value.toUpperCase();
+            const gUrl = document.getElementById('gUrl').value;
+            
+            log("Update: " + currentStatus);
+            fetch(gUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({ player_name: pName, status: currentStatus, group_code: gCode })
+            });
+            lastStatus = currentStatus;
+        }
+    }
+
+    async function refreshSquad() {
+        const gUrl = document.getElementById('gUrl').value;
+        const gCode = document.getElementById('gCode').value.toUpperCase();
         try {
-            const { data: { text } } = await Tesseract.recognize(ocrC, 'eng');
-            if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
+            const res = await fetch(`${gUrl}?group=${gCode}`);
+            const data = await res.json();
+            document.getElementById('list-content').innerHTML = Object.entries(data).map(([n, s]) => 
+                `<div style="padding:5px; border-bottom:1px solid #222;">🛡️ ${n}: <span style="color:${s === 'INCAP' ? 'red' : s === 'RESPAWNING' ? 'yellow' : '#0f0'}">${s}</span></div>`
+            ).join('');
         } catch(e) {}
+    }
 
-        // OCR for Location (Top Right)
-        const locC = document.createElement('canvas');
-        locC.width = canvas.width * 0.40; locC.height = 140;
-        locC.getContext('2d').drawImage(canvas, canvas.width - (canvas.width * 0.40), 0, (canvas.width * 0.40), 140, 0, 0, (canvas.width * 0.40), 140);
+    async function init() {
+        log("Requesting screen share...");
         try {
-            const { data: { text: zoneT } } = await Tesseract.recognize(locC, 'eng');
-            const match = zoneT.match(/location\s*[:;]\s*([^\(]+)/i);
-            if(match) lastLocation = match[1].trim();
-        } catch(e) {}
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            document.getElementById('video').srcObject = stream;
+            document.getElementById('squad-list-container').style.display = "block";
+            
+            log("SUCCESS. Monitoring active.");
+            setInterval(scanScreen, 3000);
+            setInterval(refreshSquad, 5000);
+            
+            document.getElementById('finalStartBtn').innerText = "MONITORING ACTIVE";
+            document.getElementById('finalStartBtn').disabled = true;
+            document.getElementById('finalStartBtn').style.background = "#333";
+            document.getElementById('finalStartBtn').style.color = "#666";
+        } catch (err) {
+            log("FAILED: " + err.message);
+        }
     }
-
-    if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) currentStatus = "RESPAWNING";
-
-    const url = document.getElementById('gUrl').value;
-    if(url) {
-        const body = { player_name: document.getElementById('pName').value, group_code: document.getElementById('gCode').value, status: currentStatus, location: lastLocation };
-        fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
-    }
-}
-
-async function refreshLoop() {
-    const url = document.getElementById('gUrl').value;
-    const group = document.getElementById('gCode').value;
-    if(!url || !group) return;
-    try {
-        const res = await fetch(`${url}?group=${group}`);
-        const data = await res.json();
-        
-        const tbody = document.getElementById('squad-table-body');
-        let html = "";
-
-        Object.entries(data).forEach(([name, val]) => {
-            const parts = val.split('|');
-            const status = parts[0] ? parts[0].trim() : "ALIVE";
-            const location = parts[1] ? parts[1].trim() : "UNKNOWN";
-
-            let rowColor = "#44ff44"; // Green
-            if (status.includes("INCAP")) rowColor = "#ff4444"; // Red
-            if (status.includes("RESPAWN")) rowColor = "#ffff00"; // Yellow
-
-            html += `<tr style="border-bottom: 1px solid #222; color: ${rowColor}; font-weight: bold;">
-                <td style="padding: 15px;">${name}</td>
-                <td style="padding: 15px; color: #ccc; font-weight: normal;">${location}</td>
-                <td style="padding: 15px;">${status}</td>
-            </tr>`;
-        });
-        tbody.innerHTML = html;
-    } catch(e) {}
-}
+})();
 </script>
