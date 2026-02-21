@@ -1,136 +1,160 @@
-<div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:120px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px;">
-    [SYSTEM READY] - Awaiting library load...
+<div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:100px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333;">
+    [SYSTEM READY] - Awaiting library...
 </div>
 
-<div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
-    <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:15px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+<div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace;">
+    <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+    <input type="text" id="gCode" placeholder="Group Code" style="width:100%; margin-bottom:5px; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+    <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:5px;">
     
-    <button id="finalStartBtn" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer;">
-        START CAPTURE
+    <button onclick="startMonitoring()" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:10px; border:none; cursor:pointer; margin-bottom:5px;">
+        1. START CAPTURE
+    </button>
+    <button onclick="startPiP()" id="pipBtn" style="width:100%; background:#00ffee; color:#000; font-weight:bold; padding:10px; border:none; cursor:pointer; display:none;">
+        2. ENABLE FLOATING HUD
     </button>
 </div>
 
-<div id="squad-list-container" style="margin-top:20px; color:#ff6600; font-family:Consolas, monospace; background:#111; border:1px solid #333; padding:10px; display:none;">
-    <h3 style="margin:0 0 10px 0; font-size:14px; border-bottom:1px solid #333;">-- SQUAD STATUS --</h3>
-    <div id="list-content"></div>
-</div>
+<div id="list-content" style="display:none;"></div>
 
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
+<canvas id="pip-canvas" width="300" height="200" style="display:none;"></canvas>
+<video id="pip-video" autoplay muted style="display:none;"></video>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <script>
-(function() {
-    let lastStatus = "ALIVE";
-    let respawnStartTime = 0;
-    const COOLDOWN = 30000;
+let lastStatus = "ALIVE";
+let lastSession = "UNKNOWN";
+let respawnStartTime = 0;
+const COOLDOWN = 30000;
 
-    function log(msg) {
-        const d = document.getElementById('debug-log');
-        if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
+function log(msg) {
+    const d = document.getElementById('debug-log');
+    d.innerHTML += "<br>> " + msg;
+    d.scrollTop = d.scrollHeight;
+}
+
+// --- 1. PICTURE-IN-PICTURE HUD ---
+async function startPiP() {
+    const canvas = document.getElementById('pip-canvas');
+    const video = document.getElementById('pip-video');
+    const ctx = canvas.getContext('2d');
+    const stream = canvas.captureStream();
+    video.srcObject = stream;
+
+    setInterval(() => {
+        ctx.fillStyle = "#0a0a0a";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = "bold 14px Consolas";
+        ctx.fillStyle = "#ff6600";
+        ctx.fillText("-- SQUAD STATUS --", 10, 25);
+
+        let y = 50;
+        const entries = document.getElementById('list-content').innerText.split('\n');
+        entries.forEach(line => {
+            if(line.trim() === "") return;
+            ctx.fillStyle = line.includes("INCAP") ? "#ff0000" : (line.includes("RESPAWN") ? "#ffff00" : "#00ff00");
+            ctx.fillText(line, 10, y);
+            y += 20;
+        });
+    }, 1000);
+
+    try {
+        await video.play();
+        await video.requestPictureInPicture();
+    } catch (e) { log("PiP Error: Use Chrome/Edge/Safari"); }
+}
+
+// --- 2. MAIN CAPTURE & SCANNING ---
+async function startMonitoring() {
+    log("Initializing Scanner...");
+    try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
+        document.getElementById('video').srcObject = stream;
+        document.getElementById('pipBtn').style.display = "block";
+        log("Scanner Active. Ready for PiP.");
+        
+        setInterval(scanLoop, 4000);
+        setInterval(refreshLoop, 5000);
+    } catch (err) { log("Capture Failed: " + err.message); }
+}
+
+async function scanLoop() {
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('monitor-canvas');
+    if (video.readyState !== 4) return;
+
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // --- QR SCAN (Top Right) ---
+    const qrRegion = canvas.width * 0.25;
+    const qrCanvas = document.createElement('canvas');
+    qrCanvas.width = qrRegion; qrCanvas.height = 120;
+    qrCanvas.getContext('2d').drawImage(canvas, canvas.width - qrRegion, 0, qrRegion, 120, 0, 0, qrRegion, 120);
+    
+    let sessionID = "UNKNOWN";
+    try {
+        const { data: { text } } = await Tesseract.recognize(qrCanvas, 'eng');
+        const match = text.match(/[A-Z0-9]{5,}/); // Look for session-like strings
+        if(match) sessionID = match[0];
+    } catch(e) {}
+
+    // --- STATUS SCAN (Incap/Black) ---
+    let currentStatus = "ALIVE";
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let dark = 0;
+    for (let i = 0; i < frame.data.length; i += 40) { // Sampled for speed
+        if (frame.data[i] < 15 && frame.data[i+1] < 15 && frame.data[i+2] < 15) dark++;
     }
 
-    // This is the core scanning logic
-    async function scanScreen() {
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('monitor-canvas');
-        if (!video || video.readyState !== 4) return;
-
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        let currentStatus = "ALIVE";
-
-        // 1. Black Screen (Death)
-        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        let dark = 0;
-        for (let i = 0; i < frame.data.length; i += 4) {
-            if (frame.data[i] < 15 && frame.data[i+1] < 15 && frame.data[i+2] < 15) dark++;
-        }
-
-        if ((dark / (frame.data.length / 4)) > 0.95) {
-            currentStatus = "RESPAWNING";
-            respawnStartTime = Date.now();
-        } else {
-            // 2. OCR (Incap) - Crop to bottom half
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height / 2;
-            tempCanvas.getContext('2d').drawImage(canvas, 0, canvas.height / 2, canvas.width, canvas.height / 2, 0, 0, canvas.width, canvas.height / 2);
-            
-            try {
-                if (typeof Tesseract !== 'undefined') {
-                    const { data: { text } } = await Tesseract.recognize(tempCanvas, 'eng');
-                    if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
-                }
-            } catch(e) { /* Pending */ }
-        }
-
-        // 3. Respawn Delay Lock
-        if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) {
-            currentStatus = "RESPAWNING";
-        }
-
-        if (currentStatus !== lastStatus) {
-            const pName = document.getElementById('pName').value;
-            const gCode = document.getElementById('gCode').value.toUpperCase();
-            const gUrl = document.getElementById('gUrl').value;
-            
-            log("Update: " + currentStatus);
-            fetch(gUrl, {
-                method: 'POST',
-                mode: 'no-cors',
-                body: JSON.stringify({ player_name: pName, status: currentStatus, group_code: gCode })
-            });
-            lastStatus = currentStatus;
-        }
-    }
-
-    async function refreshSquad() {
-        const gUrl = document.getElementById('gUrl').value;
-        const gCode = document.getElementById('gCode').value.toUpperCase();
+    if ((dark / (frame.data.length / 40)) > 0.90) {
+        currentStatus = "RESPAWNING";
+        respawnStartTime = Date.now();
+    } else {
+        const ocrCanvas = document.createElement('canvas');
+        ocrCanvas.width = canvas.width; ocrCanvas.height = canvas.height/2;
+        ocrCanvas.getContext('2d').drawImage(canvas, 0, canvas.height/2, canvas.width, canvas.height/2, 0, 0, canvas.width, canvas.height/2);
         try {
-            const res = await fetch(`${gUrl}?group=${gCode}`);
-            const data = await res.json();
-            document.getElementById('list-content').innerHTML = Object.entries(data).map(([n, s]) => 
-                `<div style="padding:5px; border-bottom:1px solid #222;">🛡️ ${n}: <span style="color:${s === 'INCAP' ? 'red' : s === 'RESPAWNING' ? 'yellow' : '#0f0'}">${s}</span></div>`
-            ).join('');
+            const { data: { text } } = await Tesseract.recognize(ocrCanvas, 'eng');
+            if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
         } catch(e) {}
     }
 
-    async function init() {
-        log("Attempting capture...");
-        try {
-            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            document.getElementById('video').srcObject = stream;
-            document.getElementById('squad-list-container').style.display = "block";
-            
-            log("ACTIVE. Scanning every 3s.");
-            setInterval(scanScreen, 3000);
-            setInterval(refreshSquad, 5000);
-            
-            document.getElementById('finalStartBtn').innerText = "MONITORING ACTIVE";
-            document.getElementById('finalStartBtn').disabled = true;
-        } catch (err) {
-            log("FAILED: " + err.message);
-        }
-    }
+    if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) currentStatus = "RESPAWNING";
 
-    // WP-Proof: Wait for everything to be ready
-    function checkReady() {
-        if (typeof Tesseract !== 'undefined') {
-            log("Library loaded. Ready for input.");
-            document.getElementById('finalStartBtn').addEventListener('click', init);
-        } else {
-            setTimeout(checkReady, 500);
-        }
+    if (currentStatus !== lastStatus || sessionID !== lastSession) {
+        updateSheet(currentStatus, sessionID);
+        lastStatus = currentStatus;
+        lastSession = sessionID;
     }
+}
 
-    checkReady();
-})();
+// --- 3. DATA SYNC ---
+function updateSheet(status, session) {
+    const url = document.getElementById('gUrl').value;
+    const body = {
+        player_name: document.getElementById('pName').value,
+        group_code: document.getElementById('gCode').value,
+        status: status,
+        session_info: session
+    };
+    fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
+    log(`Update sent: ${status} (${session})`);
+}
+
+async function refreshLoop() {
+    const url = document.getElementById('gUrl').value;
+    const group = document.getElementById('gCode').value;
+    try {
+        const res = await fetch(`${url}?group=${group}`);
+        const data = await res.json();
+        document.getElementById('list-content').innerText = Object.entries(data)
+            .map(([n, s]) => `${n}: ${s}`).join('\n');
+    } catch(e) {}
+}
 </script>
