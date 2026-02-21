@@ -1,5 +1,5 @@
 <div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:100px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px; line-height:1.4;">
-    [SYSTEM READY] - Master Build v16.0 Active.
+    [SYSTEM READY] - Targeting Session Info for Location...
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
@@ -22,8 +22,7 @@
                 <th style="padding:10px;">Status</th>
             </tr>
         </thead>
-        <tbody id="squad-table-body">
-            </tbody>
+        <tbody id="squad-table-body"></tbody>
     </table>
 </div>
 
@@ -47,7 +46,7 @@
     }
 
     tesseractScript.onload = () => {
-        log("OCR Library loaded. System Ready.");
+        log("OCR Ready. Ensure r_DisplaySessionInfo 1 is active.");
         document.getElementById('finalStartBtn').addEventListener('click', init);
     };
 
@@ -63,7 +62,7 @@
 
         let currentStatus = "ALIVE";
 
-        // 1. Pixel Check for Death/Loading (Darkness)
+        // 1. FAST PIXEL CHECK (Center Darkness)
         const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, 20, 20);
         let dark = 0;
         for (let i = 0; i < frame.data.length; i += 4) {
@@ -74,7 +73,7 @@
             currentStatus = "RESPAWNING";
             respawnStartTime = Date.now();
         } else {
-            // 2. OCR for Incap (Bottom Center)
+            // 2. INCAP OCR (Bottom Center)
             const incapC = document.createElement('canvas');
             incapC.width = canvas.width; incapC.height = canvas.height/4;
             incapC.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
@@ -83,23 +82,39 @@
                 if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
             } catch(e) {}
 
-            // 3. OCR for Location (Top Right)
+            // 3. TARGETED LOCATION OCR (Upper Right Block)
+            const infoW = Math.floor(canvas.width * 0.45);
+            const infoH = Math.floor(canvas.height * 0.40);
             const locC = document.createElement('canvas');
-            locC.width = canvas.width * 0.40; locC.height = 130;
-            locC.getContext('2d').drawImage(canvas, canvas.width - (canvas.width * 0.40), 0, (canvas.width * 0.40), 130, 0, 0, (canvas.width * 0.40), 130);
+            locC.width = infoW; locC.height = infoH;
+            const lCtx = locC.getContext('2d');
+            lCtx.drawImage(canvas, canvas.width - infoW, 0, infoW, infoH, 0, 0, infoW, infoH);
+
+            // CONTRAST FILTER FOR WHITE TEXT
+            let imgData = lCtx.getImageData(0, 0, infoW, infoH);
+            for (let i = 0; i < imgData.data.length; i += 4) {
+                let b = (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
+                let v = b > 180 ? 255 : 0; 
+                imgData.data[i] = imgData.data[i+1] = imgData.data[i+2] = v;
+            }
+            lCtx.putImageData(imgData, 0, 0);
+
             try {
                 const { data: { text: zText } } = await Tesseract.recognize(locC, 'eng');
-                const match = zText.match(/location\s*[:;]\s*([^\(]+)/i);
-                if(match) lastLoc = match[1].trim();
+                // Target specifically "Current player location :"
+                const match = zText.match(/location\s*[:;]\s*([^(\n]+)/i);
+                if(match) {
+                    lastLoc = match[1].trim();
+                    log("Detected: " + lastLoc); 
+                }
             } catch(e) {}
         }
 
-        // Stick to RESPAWNING status for COOLDOWN period
         if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) {
             currentStatus = "RESPAWNING";
         }
 
-        // Send Updates to Backend
+        // SYNC TO BACKEND
         const gUrl = document.getElementById('gUrl').value;
         const pName = document.getElementById('pName').value;
         const gCode = document.getElementById('gCode').value.toUpperCase();
@@ -115,7 +130,7 @@
                     location: lastLoc 
                 })
             });
-            if(currentStatus !== lastStatus) log("Updating Status: " + currentStatus);
+            if(currentStatus !== lastStatus) log("Status: " + currentStatus);
             lastStatus = currentStatus;
         }
     }
@@ -129,16 +144,15 @@
             const data = await res.json();
             const tbody = document.getElementById('squad-table-body');
             
-            // Rebuild the table rows based on filtered JSON
             tbody.innerHTML = Object.entries(data).map(([n, val]) => {
                 const parts = val.split('|');
                 const st = parts[0].trim();
                 const lc = parts[1] || "UNKNOWN";
                 const color = st === 'INCAP' ? '#ff4444' : st === 'RESPAWNING' ? '#ffff00' : '#44ff44';
                 return `<tr style="color:${color}; border-bottom:1px solid #222;">
-                    <td style="padding:12px;">${n}</td>
-                    <td style="padding:12px; color:#aaa; font-weight:normal;">${lc}</td>
-                    <td style="padding:12px; font-weight:bold;">${st}</td>
+                    <td style="padding:10px;">${n}</td>
+                    <td style="padding:10px; color:#aaa; font-weight:normal;">${lc}</td>
+                    <td style="padding:10px; font-weight:bold;">${st}</td>
                 </tr>`;
             }).join('');
         } catch(e) {}
@@ -150,18 +164,11 @@
             document.getElementById('video').srcObject = stream;
             document.getElementById('squad-list-container').style.display = "block";
             log("MONITORING ACTIVE.");
-            
-            // Intervals for own scan and squad refresh
             setInterval(scanScreen, 4000);
             setInterval(refreshSquad, 4000);
-            
-            document.getElementById('finalStartBtn').innerText = "SYSTEM ACTIVE";
             document.getElementById('finalStartBtn').disabled = true;
             document.getElementById('finalStartBtn').style.background = "#333";
-            document.getElementById('finalStartBtn').style.color = "#666";
-        } catch (err) {
-            log("Permission Denied: " + err.message);
-        }
+        } catch (err) { log("Error: " + err.message); }
     }
 })();
 </script>
