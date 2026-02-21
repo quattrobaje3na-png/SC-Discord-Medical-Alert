@@ -51,89 +51,92 @@
     };
 
     async function scanScreen() {
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('monitor-canvas');
-        if (!video || video.readyState !== 4) return;
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('monitor-canvas');
+    if (!video || video.readyState !== 4) return;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        let currentStatus = "ALIVE";
+    let currentStatus = "ALIVE";
 
-        // 1. FAST PIXEL CHECK (Center Darkness)
-        const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, 20, 20);
-        let dark = 0;
-        for (let i = 0; i < frame.data.length; i += 4) {
-            if (frame.data[i] < 20 && frame.data[i+1] < 20 && frame.data[i+2] < 20) dark++;
+    // 1. FAST PIXEL CHECK (Death)
+    const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, 20, 20);
+    let dark = 0;
+    for (let i = 0; i < frame.data.length; i += 4) {
+        if (frame.data[i] < 20 && frame.data[i+1] < 20 && frame.data[i+2] < 20) dark++;
+    }
+
+    if (dark > 350) {
+        currentStatus = "RESPAWNING";
+        respawnStartTime = Date.now();
+    } else {
+        // 2. INCAP OCR (Bottom Center)
+        const incapC = document.createElement('canvas');
+        incapC.width = 600; incapC.height = 150; // Magnified crop
+        incapC.getContext('2d').drawImage(canvas, (canvas.width/2)-300, canvas.height*0.80, 600, 150, 0, 0, 600, 150);
+        try {
+            const { data: { text } } = await Tesseract.recognize(incapC, 'eng');
+            if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
+        } catch(e) {}
+
+        // 3. TARGETED & MAGNIFIED LOCATION SCAN (Top Right)
+        const locW = 500; // Capture a 500px wide box
+        const locH = 300; // Capture a 300px tall box
+        const locC = document.createElement('canvas');
+        locC.width = locW * 2; // Double the size for better OCR legibility
+        locC.height = locH * 2;
+        const lCtx = locC.getContext('2d');
+        
+        // Zoom in on the Session Info block
+        lCtx.drawImage(canvas, canvas.width - locW, 0, locW, locH, 0, 0, locW * 2, locH * 2);
+
+        // --- HIGH-CONTRAST NOISE GATE ---
+        let imgData = lCtx.getImageData(0, 0, locC.width, locC.height);
+        for (let i = 0; i < imgData.data.length; i += 4) {
+            let avg = (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
+            // Star Citizen info text is bright white (~200+). 
+            // We kill everything else to make it "pop".
+            let v = avg > 190 ? 255 : 0; 
+            imgData.data[i] = imgData.data[i+1] = imgData.data[i+2] = v;
         }
+        lCtx.putImageData(imgData, 0, 0);
 
-        if (dark > 350) {
-            currentStatus = "RESPAWNING";
-            respawnStartTime = Date.now();
-        } else {
-            // 2. INCAP OCR (Bottom Center)
-            const incapC = document.createElement('canvas');
-            incapC.width = canvas.width; incapC.height = canvas.height/4;
-            incapC.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
-            try {
-                const { data: { text } } = await Tesseract.recognize(incapC, 'eng');
-                if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
-            } catch(e) {}
-
-            // 3. TARGETED LOCATION OCR (Upper Right Block)
-            const infoW = Math.floor(canvas.width * 0.45);
-            const infoH = Math.floor(canvas.height * 0.40);
-            const locC = document.createElement('canvas');
-            locC.width = infoW; locC.height = infoH;
-            const lCtx = locC.getContext('2d');
-            lCtx.drawImage(canvas, canvas.width - infoW, 0, infoW, infoH, 0, 0, infoW, infoH);
-
-            // CONTRAST FILTER FOR WHITE TEXT
-            let imgData = lCtx.getImageData(0, 0, infoW, infoH);
-            for (let i = 0; i < imgData.data.length; i += 4) {
-                let b = (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
-                let v = b > 180 ? 255 : 0; 
-                imgData.data[i] = imgData.data[i+1] = imgData.data[i+2] = v;
-            }
-            lCtx.putImageData(imgData, 0, 0);
-
-            try {
+        try {
+            // Only scan every 8 seconds to save CPU, since location doesn't change fast
+            if (ocrCounter % 2 === 0) {
                 const { data: { text: zText } } = await Tesseract.recognize(locC, 'eng');
-                // Target specifically "Current player location :"
-                const match = zText.match(/location\s*[:;]\s*([^(\n]+)/i);
+                // Regex looks for "Current player location :" OR "location :"
+                const match = zText.match(/(?:location)\s*[:;]\s*([^(\n\r]+)/i);
                 if(match) {
                     lastLoc = match[1].trim();
-                    log("Detected: " + lastLoc); 
+                    log("Verified Loc: " + lastLoc); 
                 }
-            } catch(e) {}
-        }
-
-        if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) {
-            currentStatus = "RESPAWNING";
-        }
-
-        // SYNC TO BACKEND
-        const gUrl = document.getElementById('gUrl').value;
-        const pName = document.getElementById('pName').value;
-        const gCode = document.getElementById('gCode').value.toUpperCase();
-        
-        if (gUrl && pName) {
-            fetch(gUrl, {
-                method: 'POST',
-                mode: 'no-cors',
-                body: JSON.stringify({ 
-                    player_name: pName, 
-                    status: currentStatus, 
-                    group_code: gCode, 
-                    location: lastLoc 
-                })
-            });
-            if(currentStatus !== lastStatus) log("Status: " + currentStatus);
-            lastStatus = currentStatus;
-        }
+            }
+        } catch(e) {}
     }
+
+    if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) {
+        currentStatus = "RESPAWNING";
+    }
+
+    // Update Backend
+    const gUrl = document.getElementById('gUrl').value;
+    const pName = document.getElementById('pName').value;
+    const gCode = document.getElementById('gCode').value.toUpperCase();
+    
+    if (gUrl && pName) {
+        fetch(gUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({ player_name: pName, status: currentStatus, group_code: gCode, location: lastLoc })
+        });
+        if(currentStatus !== lastStatus) log("Syncing: " + currentStatus);
+        lastStatus = currentStatus;
+    }
+}
 
     async function refreshSquad() {
         const gUrl = document.getElementById('gUrl').value;
