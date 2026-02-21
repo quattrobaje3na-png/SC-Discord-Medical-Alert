@@ -1,5 +1,5 @@
 <div id="debug-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:80px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; line-height:1.4;">
-    [SYSTEM READY] - Vertical List Enforcement Active.
+    [SYSTEM READY] - Object-Array Enforcement Active.
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
@@ -8,10 +8,10 @@
     <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     
     <div style="margin-bottom:10px; font-size:12px; display:flex; align-items:center; gap:10px;">
-        <label>Performance:</label>
+        <label>Scan Speed:</label>
         <select id="perfMode" style="background:#222; color:#fff; border:1px solid #444; padding:2px;">
-            <option value="4">High Performance</option>
-            <option value="16" selected>Battery Saver</option>
+            <option value="4">High Performance (4s)</option>
+            <option value="16" selected>Battery Saver (16s)</option>
         </select>
     </div>
 
@@ -23,11 +23,9 @@
     </button>
 </div>
 
-<div id="list-content" style="display:none;"></div>
-
 <video id="video" autoplay style="display:none;"></video>
 <canvas id="monitor-canvas" style="display:none;"></canvas>
-<canvas id="pip-canvas" width="650" height="500" style="display:none;"></canvas>
+<canvas id="pip-canvas" width="650" height="450" style="display:none;"></canvas>
 <video id="pip-video" autoplay muted style="display:none;"></video>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -39,12 +37,15 @@ let respawnStartTime = 0;
 let ocrCounter = 0;
 const COOLDOWN = 25000;
 
+// This is the "Master List" that prevents names from merging
+let squadData = []; 
+
 function log(msg) {
     const d = document.getElementById('debug-log');
     if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
 }
 
-// --- 1. THE FLOATING HUD (Strict Vertical Layout) ---
+// --- 1. THE FLOATING HUD ENGINE ---
 async function startPiP() {
     const canvas = document.getElementById('pip-canvas');
     const video = document.getElementById('pip-video');
@@ -53,60 +54,61 @@ async function startPiP() {
     video.srcObject = stream;
 
     const drawLoop = () => {
-        // Force complete background clear
+        // Clear Screen
         ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
+        // Header
         ctx.font = "bold 22px Consolas";
         ctx.fillStyle = "#ff6600";
-        ctx.fillText("📡 SQUAD STATUS", 25, 45);
+        ctx.fillText("📡 SQUAD STATUS", 25, 40);
         ctx.strokeStyle = "#444"; 
-        ctx.strokeRect(20, 60, 610, 1);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(20, 55, 610, 1);
 
-        // Start drawing names well below the header
-        let currentY = 110; 
-        const rawContent = document.getElementById('list-content').innerText;
-        if (!rawContent) return requestAnimationFrame(drawLoop);
-
-        // Split by our forced newline character
-        const lines = rawContent.split('\n');
+        // Render Row-by-Row from the Array
+        let yPos = 100; 
         
-        lines.forEach(line => {
-            if(!line.trim() || line.includes("undefined")) return;
-
-            // Set color based on status in the string
-            if (line.includes("INCAP")) {
+        squadData.forEach((member) => {
+            // Pick color based on member status
+            if (member.status.includes("INCAP")) {
                 ctx.fillStyle = "#ff4444";
-            } else if (line.includes("RESPAWN")) {
+                ctx.font = "bold 18px Consolas";
+            } else if (member.status.includes("RESPAWN")) {
                 ctx.fillStyle = "#ffff00";
+                ctx.font = "18px Consolas";
             } else {
                 ctx.fillStyle = "#44ff44";
+                ctx.font = "18px Consolas";
             }
 
-            ctx.font = "bold 18px Consolas";
-            // Draw the formatted line: Name | Location | Status
-            ctx.fillText(line.trim(), 25, currentY);
+            // ENFORCED FORMAT: NAME | LOCATION | STATUS
+            const lineText = `${member.name} | ${member.location} | ${member.status}`;
+            ctx.fillText(lineText, 25, yPos);
             
-            // CRITICAL: Move the Y cursor down for the NEXT person
-            currentY += 45; 
+            // Move cursor down 50 pixels for the next name
+            yPos += 50; 
         });
 
         requestAnimationFrame(drawLoop);
     };
     drawLoop();
-    try { await video.play(); await video.requestPictureInPicture(); } catch (e) { log("PiP Error."); }
+    try { 
+        await video.play(); 
+        await video.requestPictureInPicture(); 
+    } catch (e) { log("PiP Error: Make sure your browser supports PiP."); }
 }
 
-// --- 2. CAPTURE & REFRESH ---
+// --- 2. GAME SCANNING LOGIC ---
 async function startMonitoring() {
-    log("Initializing Scanner...");
+    log("Initializing Capture...");
     try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "window" } });
         document.getElementById('video').srcObject = stream;
         document.getElementById('pipBtn').style.display = "block";
         setInterval(scanLoop, 4000); 
         setInterval(refreshLoop, 5000);
-    } catch (err) { log("Capture Failed: " + err.message); }
+    } catch (err) { log("Capture Cancelled or Failed."); }
 }
 
 async function scanLoop() {
@@ -119,15 +121,15 @@ async function scanLoop() {
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    const sampleSize = 20;
-    const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, sampleSize, sampleSize);
-    let darkCount = 0;
+    // DARKNESS CHECK (Fast Pixel Math)
+    const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, 20, 20);
+    let dark = 0;
     for (let i = 0; i < frame.data.length; i += 4) {
-        if (frame.data[i] < 25 && frame.data[i+1] < 25 && frame.data[i+2] < 25) darkCount++;
+        if (frame.data[i] < 25 && frame.data[i+1] < 25 && frame.data[i+2] < 25) dark++;
     }
 
     let currentStatus = "ALIVE";
-    if (darkCount > (sampleSize * sampleSize * 0.85)) {
+    if (dark > 320) {
         currentStatus = "RESPAWNING";
         respawnStartTime = Date.now();
     }
@@ -136,39 +138,41 @@ async function scanLoop() {
     ocrCounter++;
 
     if (currentStatus === "ALIVE" && ocrCounter % throttleVal === 0) {
-        const ocrCanvas = document.createElement('canvas');
-        ocrCanvas.width = canvas.width; ocrCanvas.height = canvas.height/4;
-        ocrCanvas.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
+        // INCAP OCR (Bottom Center)
+        const ocrC = document.createElement('canvas');
+        ocrC.width = canvas.width; ocrC.height = canvas.height/4;
+        ocrC.getContext('2d').drawImage(canvas, 0, canvas.height*0.75, canvas.width, canvas.height/4, 0, 0, canvas.width, canvas.height/4);
         try {
-            const { data: { text } } = await Tesseract.recognize(ocrCanvas, 'eng');
+            const { data: { text } } = await Tesseract.recognize(ocrC, 'eng');
             if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
         } catch(e) {}
 
-        const infoW = canvas.width * 0.40;
-        const infoH = 150;
-        const infoCanvas = document.createElement('canvas');
-        infoCanvas.width = infoW; infoCanvas.height = infoH;
-        infoCanvas.getContext('2d').drawImage(canvas, canvas.width - infoW, 0, infoW, infoH, 0, 0, infoW, infoH);
+        // LOCATION OCR (Top Right)
+        const locC = document.createElement('canvas');
+        locC.width = canvas.width * 0.40; locC.height = 140;
+        locC.getContext('2d').drawImage(canvas, canvas.width - (canvas.width * 0.40), 0, (canvas.width * 0.40), 140, 0, 0, (canvas.width * 0.40), 140);
         try {
-            const { data: { text: zoneText } } = await Tesseract.recognize(infoCanvas, 'eng');
-            const locMatch = zoneText.match(/location\s*[:;]\s*([^\(]+)/i);
-            if(locMatch) lastLocation = locMatch[1].trim();
+            const { data: { text: zoneT } } = await Tesseract.recognize(locC, 'eng');
+            const match = zoneT.match(/location\s*[:;]\s*([^\(]+)/i);
+            if(match) lastLocation = match[1].trim();
         } catch(e) {}
     }
 
     if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) currentStatus = "RESPAWNING";
 
     if (currentStatus !== lastStatus || ocrCounter % throttleVal === 0) {
-        updateSheet(currentStatus, lastLocation);
+        const url = document.getElementById('gUrl').value;
+        if(url) {
+            const body = { 
+                player_name: document.getElementById('pName').value, 
+                group_code: document.getElementById('gCode').value, 
+                status: currentStatus, 
+                location: lastLocation 
+            };
+            fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
+        }
         lastStatus = currentStatus;
     }
-}
-
-function updateSheet(status, loc) {
-    const url = document.getElementById('gUrl').value;
-    if(!url) return;
-    const body = { player_name: document.getElementById('pName').value, group_code: document.getElementById('gCode').value, status: status, location: loc };
-    fetch(url, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
 }
 
 async function refreshLoop() {
@@ -179,15 +183,15 @@ async function refreshLoop() {
         const res = await fetch(`${url}?group=${group}`);
         const data = await res.json();
         
-        let output = "";
-        for (const [name, val] of Object.entries(data)) {
-            const parts = val.split('|');
-            const status = parts[0] ? parts[0].trim() : "ALIVE";
-            const location = parts[1] ? parts[1].trim() : "UNKNOWN";
-            // FORCE NEWLINE after every player
-            output += name + " | " + location + " | " + status + "\n"; 
-        }
-        document.getElementById('list-content').innerText = output;
-    } catch(e) {}
+        // PARSE JSON INTO CLEAN OBJECT ARRAY
+        squadData = Object.entries(data).map(([name, valueString]) => {
+            const parts = valueString.split('|');
+            return {
+                name: name.trim(),
+                status: parts[0] ? parts[0].trim() : "ALIVE",
+                location: parts[1] ? parts[1].trim() : "UNKNOWN"
+            };
+        });
+    } catch(e) { log("Sync Error"); }
 }
 </script>
