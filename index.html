@@ -31,7 +31,7 @@
 </div>
 
 <div id="squad-list-container" style="margin-top:20px; color:#ff6600; font-family:Consolas, monospace; background:#111; border:1px solid #333; padding:15px; display:none; border-radius:4px;">
-    <h3 style="margin:0 0 15px 0; font-size:16px; border-bottom:1px solid #333; color:#00ffee; padding-bottom:5px;">📡 SQUAD STATUS (FILTERED)</h3>
+    <h3 style="margin:0 0 15px 0; font-size:16px; border-bottom:1px solid #333; color:#00ffee; padding-bottom:5px;">📡 SQUAD STATUS (LIVE)</h3>
     <table style="width:100%; border-collapse: collapse; text-align: left; color:#fff;">
         <thead>
             <tr style="font-size:12px; color:#888; text-transform:uppercase; border-bottom:1px solid #222;">
@@ -69,19 +69,21 @@
         document.getElementById('finalStartBtn').addEventListener('click', init);
     };
 
-    function addLocalPlayerToUI(name) {
+    // Forces a row into the table even if the database is empty/slow
+    function forceLocalRow() {
+        const name = document.getElementById('pName').value;
         const tbody = document.getElementById('squad-table-body');
-        if (document.getElementById(`row-${name}`)) return;
+        if (!name || document.getElementById(`row-${name}`)) return;
 
         const row = document.createElement('tr');
         row.id = `row-${name}`;
-        row.style.cssText = "color:#44ff44; border-bottom:1px solid #222;";
+        row.style.cssText = "color:#44ff44; border-bottom:1px solid #222; background: rgba(0, 255, 238, 0.05);";
         row.innerHTML = `
-            <td style="padding:10px;">${name} <span style="font-size:9px; color:#ff6600;">(LOCAL)</span></td>
+            <td style="padding:10px;">${name} <span style="font-size:9px; color:#00ffee;">(YOU)</span></td>
             <td id="loc-${name}" style="padding:10px; color:#aaa; font-weight:normal;">${lastLoc}</td>
-            <td id="stat-${name}" style="padding:10px; font-weight:bold;">ALIVE</td>
+            <td id="stat-${name}" style="padding:10px; font-weight:bold;">${lastStatus}</td>
         `;
-        tbody.appendChild(row);
+        tbody.prepend(row);
     }
 
     async function scanScreen() {
@@ -156,6 +158,12 @@
                 body: JSON.stringify({ player_name: pName, status: currentStatus, group_code: gCode, location: lastLoc })
             });
             lastStatus = currentStatus;
+            
+            // Sync local row immediately if it exists
+            const statCell = document.getElementById(`stat-${pName}`);
+            const locCell = document.getElementById(`loc-${pName}`);
+            if(statCell) statCell.innerText = currentStatus;
+            if(locCell) locCell.innerText = lastLoc;
         }
     }
 
@@ -170,24 +178,28 @@
             const data = await res.json();
             const tbody = document.getElementById('squad-table-body');
             
-            let html = Object.entries(data).map(([n, val]) => {
+            // Filter out our own entry from the incoming data to prevent duplicates
+            const otherPlayers = Object.entries(data).filter(([n]) => n !== myName);
+
+            let html = otherPlayers.map(([n, val]) => {
                 const parts = val.split('|');
                 const st = parts[0].trim();
                 const lc = parts[1] || "UNKNOWN";
                 const color = st === 'INCAP' ? '#ff4444' : st === 'RESPAWNING' ? '#ffff00' : '#44ff44';
                 return `<tr id="row-${n}" style="color:${color}; border-bottom:1px solid #222;">
-                    <td style="padding:10px;">${n} ${n === myName ? '<span style="color:#00ffee;">(YOU)</span>' : ''}</td>
+                    <td style="padding:10px;">${n}</td>
                     <td style="padding:10px; color:#aaa; font-weight:normal;">${lc}</td>
                     <td style="padding:10px; font-weight:bold;">${st}</td>
                 </tr>`;
             }).join('');
 
+            // Keep the local row at the top
             tbody.innerHTML = html;
-
-            if (!data[myName]) {
-                addLocalPlayerToUI(myName);
-            }
-        } catch(e) {}
+            forceLocalRow(); 
+            
+        } catch(e) {
+            forceLocalRow(); // Ensure user stays visible even if fetch fails
+        }
     }
 
     async function init() {
@@ -199,8 +211,8 @@
             document.getElementById('video').srcObject = stream;
             document.getElementById('squad-list-container').style.display = "block";
             
-            addLocalPlayerToUI(pName);
-            log("MONITORING ACTIVE. Local player initialized.");
+            log("MONITORING ACTIVE.");
+            forceLocalRow();
 
             setInterval(scanScreen, 4000);
             setInterval(refreshSquad, 4000);
