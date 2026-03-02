@@ -2,27 +2,42 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Universal Squad Monitor</title>
+    <title>Squad Status Monitor - Pro Edition</title>
 </head>
 <body style="background:#050505; margin:20px; color:#fff; font-family:Consolas, monospace;">
 
-<div id="debug-log" style="background:#000; color:#0f0; padding:10px; height:60px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px;">
-    [SYSTEM READY] - Universal Resolution Sweep Active.
+<div id="debug-log" style="background:#000; color:#0f0; padding:10px; height:60px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px; line-height:1.4;">
+    [SYSTEM READY] - Loading 190 Locations from JSON...
 </div>
 
 <div style="margin-bottom:10px; border:1px solid #444; background:#111; padding:10px; border-radius:4px;">
-    <span style="color:#00ffee; font-size:10px;">DYNAMIC OCR SWEEP (TOP RIGHT)</span>
-    <canvas id="ocr-debug-view" style="width:100%; height:80px; background:#000; border:1px solid #222; image-rendering: pixelated; margin-top:5px;"></canvas>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+        <span style="color:#00ffee; font-size:10px; text-transform:uppercase; letter-spacing:1px;">OCR Vision Feed (Auto-Sweep)</span>
+        <div>
+            <span style="font-size:10px; color:#888;">Threshold: </span>
+            <input type="range" id="threshSlider" min="100" max="220" value="175" style="vertical-align:middle;">
+        </div>
+    </div>
+    <canvas id="ocr-debug-view" style="width:100%; height:80px; background:#000; border:1px solid #222; image-rendering: pixelated;"></canvas>
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; border-radius:4px;">
     <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <input type="text" id="gCode" placeholder="Group Code" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <input type="text" id="gUrl" value="https://script.google.com/macros/s/AKfycbyqazOPGDBqahu8NW9QAiWSOFUTyMWX9EkBscChT0kHTUAYlcZQTVsbNHRRC65FGfW9/exec" style="width:100%; margin-bottom:15px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <button id="finalStartBtn" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer;">START MONITORING</button>
+    <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    
+    <div style="position:relative; margin-bottom:15px;">
+        <input type="text" id="gUrl" 
+               value="https://script.google.com/macros/s/AKfycbyqazOPGDBqahu8NW9QAiWSOFUTyMWX9EkBscChT0kHTUAYlcZQTVsbNHRRC65FGfW9/exec" 
+               style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:8px; box-sizing:border-box;">
+        <span onclick="document.getElementById('gUrl').value='https://script.google.com/macros/s/AKfycbyqazOPGDBqahu8NW9QAiWSOFUTyMWX9EkBscChT0kHTUAYlcZQTVsbNHRRC65FGfW9/exec'" 
+              style="position:absolute; right:10px; top:8px; font-size:10px; color:#888; cursor:pointer; text-decoration:underline;">Reset</span>
+    </div>
+    
+    <button id="finalStartBtn" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; text-transform:uppercase;">START MONITORING</button>
 </div>
 
-<div id="squad-list-container" style="margin-top:20px; display:none;">
+<div id="squad-list-container" style="margin-top:20px; background:#111; border:1px solid #333; padding:15px; display:none; border-radius:4px;">
+    <h3 style="margin:0 0 15px 0; font-size:14px; border-bottom:1px solid #333; color:#00ffee; padding-bottom:5px;">📡 SQUAD STATUS (LIVE)</h3>
     <table style="width:100%; border-collapse: collapse; text-align: left;">
         <tbody id="squad-table-body"></tbody>
     </table>
@@ -33,6 +48,7 @@
 
 <script>
 (function() {
+    let KNOWN_LOCATIONS = [];
     const tesseractScript = document.createElement('script');
     tesseractScript.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
     document.head.appendChild(tesseractScript);
@@ -40,25 +56,77 @@
     let lastStatus = "ALIVE";
     let lastLoc = "SCANNING...";
     let ocrCounter = 0;
+    let lastSyncTime = 0;
 
     function log(msg) {
         const d = document.getElementById('debug-log');
         if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
     }
 
-    tesseractScript.onload = () => { log("OCR Initialized."); document.getElementById('finalStartBtn').addEventListener('click', init); };
+    // Load the 190 locations we extracted from the JSON
+    async function loadLocations() {
+        try {
+            const response = await fetch('locations.json');
+            const data = await response.json();
+            KNOWN_LOCATIONS = data.targets;
+            log("Database Loaded: " + KNOWN_LOCATIONS.length + " POIs active.");
+        } catch (e) {
+            log("Error: locations.json not found. Fuzzy matching disabled.");
+        }
+    }
+
+    // Fuzzy matching logic to "snap" to correct location names
+    function getBestMatch(input) {
+        if (!input || KNOWN_LOCATIONS.length === 0) return input;
+        let best = { word: input, score: 0 };
+        
+        KNOWN_LOCATIONS.forEach(loc => {
+            let matches = 0;
+            const target = loc.toUpperCase();
+            const source = input.toUpperCase();
+            
+            // Contains match
+            if (source.includes(target) || target.includes(source)) matches += 10;
+            
+            // Word intersection (skipping short noise words)
+            const sourceWords = source.split(/[ \-_]/);
+            const targetWords = target.split(/[ \-_]/);
+            sourceWords.forEach(w => { if(targetWords.includes(w) && w.length > 2) matches += 5; });
+
+            if (matches > best.score) best = { word: loc, score: matches };
+        });
+
+        return best.score > 4 ? best.word : input;
+    }
+
+    tesseractScript.onload = () => { 
+        loadLocations();
+        document.getElementById('finalStartBtn').addEventListener('click', init); 
+    };
 
     function updateUI() {
         const name = document.getElementById('pName').value;
         const tbody = document.getElementById('squad-table-body');
         if (!name) return;
+
         let row = document.getElementById(`row-${name}`);
         if (!row) {
-            row = document.createElement('tr'); row.id = `row-${name}`;
-            row.style.cssText = "color:#44ff44; border-bottom:1px solid #222;";
+            row = document.createElement('tr');
+            row.id = `row-${name}`;
+            row.style.cssText = "color:#44ff44; border-bottom:1px solid #222; background: rgba(0, 255, 238, 0.03);";
             tbody.prepend(row);
         }
-        row.innerHTML = `<td style="padding:10px;">${name} (YOU)</td><td style="padding:10px; color:#aaa;">${lastLoc}</td><td style="padding:10px; font-weight:bold;">${lastStatus}</td>`;
+        
+        const syncPulse = (Date.now() - lastSyncTime < 2000) ? 'opacity:1;' : 'opacity:0.3;';
+        
+        row.innerHTML = `
+            <td style="padding:10px;">
+                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#0f0; margin-right:8px; transition:0.3s; ${syncPulse}"></span>
+                ${name} <span style="font-size:9px; color:#00ffee;">(YOU)</span>
+            </td>
+            <td style="padding:10px; color:#aaa; font-weight:normal;">${lastLoc}</td>
+            <td style="padding:10px; font-weight:bold;">${lastStatus}</td>
+        `;
     }
 
     async function scanScreen() {
@@ -74,60 +142,74 @@
 
         ocrCounter++;
 
+        // UNIVERSAL RESOLUTION SWEEP
         if (ocrCounter % 2 === 0) {
-            // --- RESOLUTION INDEPENDENT SWEEP ---
-            // Captures 30% of width and 25% of height from the top right
             const sweepW = Math.floor(canvas.width * 0.30);
-            const sweepH = Math.floor(canvas.height * 0.25);
-            const sweepX = canvas.width - sweepW - 10;
-            const sweepY = Math.floor(canvas.height * 0.12); // Starts higher to catch early lines
+            const sweepH = 100;
+            const startX = canvas.width - sweepW - 10;
+            const startY = Math.floor(canvas.height * 0.17); // Dynamic Y to catch the Location line
 
-            debugCanvas.width = sweepW; debugCanvas.height = sweepH;
+            debugCanvas.width = sweepW;
+            debugCanvas.height = sweepH;
             const dCtx = debugCanvas.getContext('2d');
-            dCtx.drawImage(canvas, sweepX, sweepY, sweepW, sweepH, 0, 0, sweepW, sweepH);
+            dCtx.drawImage(canvas, startX, startY, sweepW, sweepH, 0, 0, sweepW, sweepH);
 
-            // Binarization for OCR clarity
+            // Binarization with Slider Threshold
+            const thresh = document.getElementById('threshSlider').value;
             let imgData = dCtx.getImageData(0, 0, debugCanvas.width, debugCanvas.height);
             let data = imgData.data;
             for (let i = 0; i < data.length; i += 4) {
-                let v = ((data[i] + data[i+1] + data[i+2]) / 3) > 170 ? 0 : 255; 
+                let v = ((data[i] + data[i+1] + data[i+2]) / 3) > thresh ? 0 : 255; 
                 data[i] = data[i+1] = data[i+2] = v;
             }
             dCtx.putImageData(imgData, 0, 0);
 
             try {
                 const { data: { text } } = await Tesseract.recognize(debugCanvas, 'eng');
-                // Pattern matches the location line regardless of what text is above/below it
                 const match = text.match(/(?:location|loc)\s*[:;]\s*([^(\n\r]+)/i);
+                
+                let rawLoc = "";
                 if(match) {
-                    lastLoc = match[1].trim().toUpperCase().replace(/[^A-Z0-9\s]/g, "");
-                    log("LOCKED: " + lastLoc);
+                    rawLoc = match[1].trim().toUpperCase();
                 } else {
-                    // Failover sweep for specific POI keywords
+                    // Fallback for keywords in the sweep area
                     const lines = text.split('\n');
-                    const fallback = lines.find(l => l.includes("RR") || l.includes("CLINIC") || l.includes("STATION"));
-                    if (fallback) lastLoc = fallback.trim().toUpperCase();
+                    const found = lines.find(l => l.includes("RR") || l.includes("CLINIC") || l.includes("STATION") || l.includes("HALO"));
+                    if (found) rawLoc = found.trim().toUpperCase();
+                }
+
+                if (rawLoc) {
+                    lastLoc = getBestMatch(rawLoc);
                 }
             } catch(e) {}
         }
 
         updateUI();
+        
+        // POST Sync
         const gUrl = document.getElementById('gUrl').value;
         const pName = document.getElementById('pName').value;
+        const gCode = document.getElementById('gCode').value.toUpperCase();
         if (gUrl && pName) {
-            fetch(gUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ player_name: pName, status: lastStatus, group_code: document.getElementById('gCode').value, location: lastLoc }) });
+            fetch(gUrl, { 
+                method: 'POST', 
+                mode: 'no-cors', 
+                body: JSON.stringify({ player_name: pName, status: lastStatus, group_code: gCode, location: lastLoc }) 
+            }).then(() => { lastSyncTime = Date.now(); });
         }
     }
 
     async function init() {
+        if(!document.getElementById('pName').value) { alert("Handle Required"); return; }
         try {
             const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
             document.getElementById('video').srcObject = stream;
             document.getElementById('squad-list-container').style.display = "block";
             updateUI();
             setInterval(scanScreen, 4000);
+            document.getElementById('finalStartBtn').innerText = "MONITORING ACTIVE";
+            document.getElementById('finalStartBtn').style.background = "#333";
             document.getElementById('finalStartBtn').disabled = true;
-            document.getElementById('finalStartBtn').innerText = "SWEEPING ACTIVE";
         } catch (err) { log("Error: " + err.message); }
     }
 })();
