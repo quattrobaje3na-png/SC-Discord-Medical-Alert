@@ -2,44 +2,28 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Squad Status Monitor - CMDR Quattro Edition</title>
+    <title>Universal Squad Monitor</title>
 </head>
 <body style="background:#050505; margin:20px; color:#fff; font-family:Consolas, monospace;">
 
-<div id="debug-log" style="background:#000; color:#0f0; padding:10px; height:80px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px; line-height:1.4;">
-    [SYSTEM READY] - Awaiting Start...
+<div id="debug-log" style="background:#000; color:#0f0; padding:10px; height:60px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px;">
+    [SYSTEM READY] - Universal Resolution Sweep Active.
 </div>
 
 <div style="margin-bottom:10px; border:1px solid #444; background:#111; padding:10px; border-radius:4px;">
-    <span style="color:#00ffee; font-size:10px; text-transform:uppercase; letter-spacing:1px;">Internal OCR Vision (Targeting Location Line)</span><br>
-    <canvas id="ocr-debug-view" style="width:100%; height:100px; background:#000; margin-top:5px; border:1px solid #222; image-rendering: pixelated;"></canvas>
+    <span style="color:#00ffee; font-size:10px;">DYNAMIC OCR SWEEP (TOP RIGHT)</span>
+    <canvas id="ocr-debug-view" style="width:100%; height:80px; background:#000; border:1px solid #222; image-rendering: pixelated; margin-top:5px;"></canvas>
 </div>
 
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; border-radius:4px;">
     <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    
-    <div style="position:relative; margin-bottom:15px;">
-        <input type="text" id="gUrl" 
-               value="https://script.google.com/macros/s/AKfycbyqazOPGDBqahu8NW9QAiWSOFUTyMWX9EkBscChT0kHTUAYlcZQTVsbNHRRC65FGfW9/exec" 
-               style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:8px; box-sizing:border-box;">
-        <span onclick="document.getElementById('gUrl').value='https://script.google.com/macros/s/AKfycbyqazOPGDBqahu8NW9QAiWSOFUTyMWX9EkBscChT0kHTUAYlcZQTVsbNHRRC65FGfW9/exec'" 
-              style="position:absolute; right:10px; top:8px; font-size:10px; color:#888; cursor:pointer; text-decoration:underline;">Reset URL</span>
-    </div>
-    
-    <button id="finalStartBtn" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; text-transform:uppercase;">START MONITORING</button>
+    <input type="text" id="gCode" placeholder="Group Code" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <input type="text" id="gUrl" value="https://script.google.com/macros/s/AKfycbyqazOPGDBqahu8NW9QAiWSOFUTyMWX9EkBscChT0kHTUAYlcZQTVsbNHRRC65FGfW9/exec" style="width:100%; margin-bottom:15px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    <button id="finalStartBtn" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer;">START MONITORING</button>
 </div>
 
-<div id="squad-list-container" style="margin-top:20px; background:#111; border:1px solid #333; padding:15px; display:none; border-radius:4px;">
-    <h3 style="margin:0 0 15px 0; font-size:16px; border-bottom:1px solid #333; color:#00ffee; padding-bottom:5px;">📡 SQUAD STATUS (LIVE)</h3>
+<div id="squad-list-container" style="margin-top:20px; display:none;">
     <table style="width:100%; border-collapse: collapse; text-align: left;">
-        <thead>
-            <tr style="font-size:11px; color:#666; text-transform:uppercase;">
-                <th style="padding:10px;">Handle</th>
-                <th style="padding:10px;">Location</th>
-                <th style="padding:10px;">Status</th>
-            </tr>
-        </thead>
         <tbody id="squad-table-body"></tbody>
     </table>
 </div>
@@ -62,26 +46,19 @@
         if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
     }
 
-    tesseractScript.onload = () => { log("OCR Ready. Open r_DisplaySessionInfo 1 in-game."); document.getElementById('finalStartBtn').addEventListener('click', init); };
+    tesseractScript.onload = () => { log("OCR Initialized."); document.getElementById('finalStartBtn').addEventListener('click', init); };
 
     function updateUI() {
         const name = document.getElementById('pName').value;
         const tbody = document.getElementById('squad-table-body');
         if (!name) return;
-
         let row = document.getElementById(`row-${name}`);
         if (!row) {
-            row = document.createElement('tr');
-            row.id = `row-${name}`;
+            row = document.createElement('tr'); row.id = `row-${name}`;
             row.style.cssText = "color:#44ff44; border-bottom:1px solid #222;";
             tbody.prepend(row);
         }
-        
-        row.innerHTML = `
-            <td style="padding:10px;">${name} <span style="font-size:9px; color:#00ffee;">(YOU)</span></td>
-            <td style="padding:10px; color:#aaa;">${lastLoc}</td>
-            <td style="padding:10px; font-weight:bold;">${lastStatus}</td>
-        `;
+        row.innerHTML = `<td style="padding:10px;">${name} (YOU)</td><td style="padding:10px; color:#aaa;">${lastLoc}</td><td style="padding:10px; font-weight:bold;">${lastStatus}</td>`;
     }
 
     async function scanScreen() {
@@ -98,71 +75,59 @@
         ocrCounter++;
 
         if (ocrCounter % 2 === 0) {
-            // TARGETED CROP: Middle-Right side where "Current player location" usually sits
-            const locW = Math.floor(canvas.width * 0.30); 
-            const locH = 80; 
-            const startX = canvas.width - locW - 20;
-            const startY = Math.floor(canvas.height * 0.22); // Target the mid-section of debug block
+            // --- RESOLUTION INDEPENDENT SWEEP ---
+            // Captures 30% of width and 25% of height from the top right
+            const sweepW = Math.floor(canvas.width * 0.30);
+            const sweepH = Math.floor(canvas.height * 0.25);
+            const sweepX = canvas.width - sweepW - 10;
+            const sweepY = Math.floor(canvas.height * 0.12); // Starts higher to catch early lines
 
-            debugCanvas.width = locW;
-            debugCanvas.height = locH;
+            debugCanvas.width = sweepW; debugCanvas.height = sweepH;
             const dCtx = debugCanvas.getContext('2d');
-            dCtx.drawImage(canvas, startX, startY, locW, locH, 0, 0, locW, locH);
+            dCtx.drawImage(canvas, sweepX, sweepY, sweepW, sweepH, 0, 0, sweepW, sweepH);
 
-            // THRESHOLD FILTER: Converts teal background to white, white text to black
+            // Binarization for OCR clarity
             let imgData = dCtx.getImageData(0, 0, debugCanvas.width, debugCanvas.height);
             let data = imgData.data;
             for (let i = 0; i < data.length; i += 4) {
-                let brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-                let v = brightness > 165 ? 0 : 255; 
+                let v = ((data[i] + data[i+1] + data[i+2]) / 3) > 170 ? 0 : 255; 
                 data[i] = data[i+1] = data[i+2] = v;
             }
             dCtx.putImageData(imgData, 0, 0);
 
             try {
                 const { data: { text } } = await Tesseract.recognize(debugCanvas, 'eng');
+                // Pattern matches the location line regardless of what text is above/below it
                 const match = text.match(/(?:location|loc)\s*[:;]\s*([^(\n\r]+)/i);
                 if(match) {
                     lastLoc = match[1].trim().toUpperCase().replace(/[^A-Z0-9\s]/g, "");
-                    log("LOCATION UPDATED: " + lastLoc);
+                    log("LOCKED: " + lastLoc);
                 } else {
-                    // Keyword fallback
+                    // Failover sweep for specific POI keywords
                     const lines = text.split('\n');
-                    const found = lines.find(l => l.includes("RR") || l.includes("CLINIC") || l.includes("STATION"));
-                    if (found) lastLoc = found.trim().toUpperCase();
+                    const fallback = lines.find(l => l.includes("RR") || l.includes("CLINIC") || l.includes("STATION"));
+                    if (fallback) lastLoc = fallback.trim().toUpperCase();
                 }
             } catch(e) {}
         }
 
         updateUI();
-        
         const gUrl = document.getElementById('gUrl').value;
         const pName = document.getElementById('pName').value;
         if (gUrl && pName) {
-            fetch(gUrl, { 
-                method: 'POST', 
-                mode: 'no-cors', 
-                body: JSON.stringify({ 
-                    player_name: pName, 
-                    status: lastStatus, 
-                    group_code: document.getElementById('gCode').value, 
-                    location: lastLoc 
-                }) 
-            });
+            fetch(gUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ player_name: pName, status: lastStatus, group_code: document.getElementById('gCode').value, location: lastLoc }) });
         }
     }
 
     async function init() {
-        if(!document.getElementById('pName').value) { alert("Enter RSI Handle"); return; }
         try {
             const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
             document.getElementById('video').srcObject = stream;
             document.getElementById('squad-list-container').style.display = "block";
             updateUI();
             setInterval(scanScreen, 4000);
-            document.getElementById('finalStartBtn').innerText = "MONITORING ACTIVE";
-            document.getElementById('finalStartBtn').style.background = "#333";
             document.getElementById('finalStartBtn').disabled = true;
+            document.getElementById('finalStartBtn').innerText = "SWEEPING ACTIVE";
         } catch (err) { log("Error: " + err.message); }
     }
 })();
