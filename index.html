@@ -13,7 +13,17 @@
 <div style="background:#1a1a1a; padding:15px; border:1px solid #333; color:#ff6600; font-family:Consolas, monospace; border-radius:4px;">
     <input type="text" id="pName" placeholder="RSI Handle" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
     <input type="text" id="gCode" placeholder="Group Code (e.g. SQUAD1)" style="width:100%; margin-bottom:10px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
-    <input type="text" id="gUrl" placeholder="Google Script URL" style="width:100%; margin-bottom:15px; background:#222; color:#fff; border:1px solid #444; padding:8px;">
+    
+    <div style="position:relative; margin-bottom:15px;">
+        <input type="text" id="gUrl" 
+               value="https://script.google.com/macros/s/AKfycbyqazOPGDBqahu8NW9QAiWSOFUTyMWX9EkBscChT0kHTUAYlcZQTVsbNHRRC65FGfW9/exec" 
+               placeholder="Google Script URL" 
+               style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:8px; box-sizing:border-box;">
+        <span onclick="document.getElementById('gUrl').value='https://script.google.com/macros/s/AKfycbyqazOPGDBqahu8NW9QAiWSOFUTyMWX9EkBscChT0kHTUAYlcZQTVsbNHRRC65FGfW9/exec'" 
+              style="position:absolute; right:10px; top:8px; font-size:10px; color:#888; cursor:pointer; text-decoration:underline;">
+              Reset Default
+        </span>
+    </div>
     
     <button id="finalStartBtn" style="width:100%; background:#ff6600; color:#000; font-weight:bold; padding:12px; border:none; cursor:pointer; font-family:Consolas, monospace; text-transform:uppercase;">
         START MONITORING
@@ -87,7 +97,6 @@
         let currentStatus = "ALIVE";
         ocrCounter++;
 
-        // 1. FAST PIXEL CHECK (Death/Black Screen)
         const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, 20, 20);
         let dark = 0;
         for (let i = 0; i < frame.data.length; i += 4) {
@@ -98,7 +107,6 @@
             currentStatus = "RESPAWNING";
             respawnStartTime = Date.now();
         } else {
-            // 2. INCAP OCR (Bottom Center)
             const incapC = document.createElement('canvas');
             incapC.width = 600; incapC.height = 150;
             incapC.getContext('2d').drawImage(canvas, (canvas.width/2)-300, canvas.height*0.80, 600, 150, 0, 0, 600, 150);
@@ -107,7 +115,6 @@
                 if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
             } catch(e) {}
 
-            // 3. TARGETED LOCATION SCAN (Top Right)
             if (ocrCounter % 2 === 0) {
                 const locW = 500; const locH = 300;
                 const locC = document.createElement('canvas');
@@ -177,7 +184,6 @@
 
             tbody.innerHTML = html;
 
-            // If local player isn't in backend data yet, force add them
             if (!data[myName]) {
                 addLocalPlayerToUI(myName);
             }
@@ -193,7 +199,6 @@
             document.getElementById('video').srcObject = stream;
             document.getElementById('squad-list-container').style.display = "block";
             
-            // SHOW PLAYER IMMEDIATELY
             addLocalPlayerToUI(pName);
             log("MONITORING ACTIVE. Local player initialized.");
 
