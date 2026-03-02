@@ -65,25 +65,28 @@
     }
 
     tesseractScript.onload = () => {
-        log("OCR Ready. Ensure r_DisplaySessionInfo 1 is active.");
+        log("OCR Ready. Ensure 'r_DisplaySessionInfo 1' is active.");
         document.getElementById('finalStartBtn').addEventListener('click', init);
     };
 
-    // Forces a row into the table even if the database is empty/slow
     function forceLocalRow() {
         const name = document.getElementById('pName').value;
         const tbody = document.getElementById('squad-table-body');
-        if (!name || document.getElementById(`row-${name}`)) return;
+        if (!name) return;
 
-        const row = document.createElement('tr');
-        row.id = `row-${name}`;
-        row.style.cssText = "color:#44ff44; border-bottom:1px solid #222; background: rgba(0, 255, 238, 0.05);";
+        let row = document.getElementById(`row-${name}`);
+        if (!row) {
+            row = document.createElement('tr');
+            row.id = `row-${name}`;
+            row.style.cssText = "color:#44ff44; border-bottom:1px solid #222; background: rgba(0, 255, 238, 0.05);";
+            tbody.prepend(row);
+        }
+        
         row.innerHTML = `
             <td style="padding:10px;">${name} <span style="font-size:9px; color:#00ffee;">(YOU)</span></td>
             <td id="loc-${name}" style="padding:10px; color:#aaa; font-weight:normal;">${lastLoc}</td>
             <td id="stat-${name}" style="padding:10px; font-weight:bold;">${lastStatus}</td>
         `;
-        tbody.prepend(row);
     }
 
     async function scanScreen() {
@@ -99,6 +102,7 @@
         let currentStatus = "ALIVE";
         ocrCounter++;
 
+        // 1. DEATH PIXEL CHECK
         const frame = ctx.getImageData(canvas.width/2 - 10, canvas.height/2 - 10, 20, 20);
         let dark = 0;
         for (let i = 0; i < frame.data.length; i += 4) {
@@ -109,43 +113,44 @@
             currentStatus = "RESPAWNING";
             respawnStartTime = Date.now();
         } else {
-            const incapC = document.createElement('canvas');
-            incapC.width = 600; incapC.height = 150;
-            incapC.getContext('2d').drawImage(canvas, (canvas.width/2)-300, canvas.height*0.80, 600, 150, 0, 0, 600, 150);
-            try {
-                const { data: { text } } = await Tesseract.recognize(incapC, 'eng');
-                if (text.toLowerCase().includes("incapacitated")) currentStatus = "INCAP";
-            } catch(e) {}
-
+            // 2. OPTIMIZED LOCATION SCAN (Based on Screenshot)
             if (ocrCounter % 2 === 0) {
-                const locW = 500; const locH = 300;
+                const locW = Math.floor(canvas.width * 0.35); 
+                const locH = Math.floor(canvas.height * 0.45);
                 const locC = document.createElement('canvas');
-                locC.width = locW * 2; locC.height = locH * 2;
+                locC.width = locW * 2; // Zoom in for OCR clarity
+                locC.height = locH * 2;
                 const lCtx = locC.getContext('2d');
+                
                 lCtx.drawImage(canvas, canvas.width - locW, 0, locW, locH, 0, 0, locW * 2, locH * 2);
 
+                // Contrast Inversion: Black text on White background is best for OCR
                 let imgData = lCtx.getImageData(0, 0, locC.width, locC.height);
                 for (let i = 0; i < imgData.data.length; i += 4) {
                     let avg = (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
-                    let v = avg > 190 ? 255 : 0; 
+                    let v = avg > 150 ? 0 : 255; 
                     imgData.data[i] = imgData.data[i+1] = imgData.data[i+2] = v;
                 }
                 lCtx.putImageData(imgData, 0, 0);
 
                 try {
-                    const { data: { text: zText } } = await Tesseract.recognize(locC, 'eng');
-                    const match = zText.match(/(?:location)\s*[:;]\s*([^(\n\r]+)/i);
+                    const { data: { text } } = await Tesseract.recognize(locC, 'eng');
+                    // Pattern looks for "location :" and grabs everything until the next line or parenthesis
+                    const match = text.match(/location\s*[:;]\s*([^(\n\r]+)/i);
                     if(match) {
-                        lastLoc = match[1].trim();
+                        lastLoc = match[1].trim().replace(/[_|\[\]]/g, "").toUpperCase();
                         log("Verified Loc: " + lastLoc); 
                     }
-                } catch(e) {}
+                } catch(e) { log("OCR Error: " + e); }
             }
         }
 
         if (currentStatus === "ALIVE" && (Date.now() - respawnStartTime < COOLDOWN)) {
             currentStatus = "RESPAWNING";
         }
+
+        lastStatus = currentStatus;
+        forceLocalRow();
 
         const gUrl = document.getElementById('gUrl').value;
         const pName = document.getElementById('pName').value;
@@ -157,13 +162,6 @@
                 mode: 'no-cors',
                 body: JSON.stringify({ player_name: pName, status: currentStatus, group_code: gCode, location: lastLoc })
             });
-            lastStatus = currentStatus;
-            
-            // Sync local row immediately if it exists
-            const statCell = document.getElementById(`stat-${pName}`);
-            const locCell = document.getElementById(`loc-${pName}`);
-            if(statCell) statCell.innerText = currentStatus;
-            if(locCell) locCell.innerText = lastLoc;
         }
     }
 
@@ -178,28 +176,22 @@
             const data = await res.json();
             const tbody = document.getElementById('squad-table-body');
             
-            // Filter out our own entry from the incoming data to prevent duplicates
             const otherPlayers = Object.entries(data).filter(([n]) => n !== myName);
-
             let html = otherPlayers.map(([n, val]) => {
                 const parts = val.split('|');
                 const st = parts[0].trim();
                 const lc = parts[1] || "UNKNOWN";
                 const color = st === 'INCAP' ? '#ff4444' : st === 'RESPAWNING' ? '#ffff00' : '#44ff44';
-                return `<tr id="row-${n}" style="color:${color}; border-bottom:1px solid #222;">
+                return `<tr style="color:${color}; border-bottom:1px solid #222;">
                     <td style="padding:10px;">${n}</td>
                     <td style="padding:10px; color:#aaa; font-weight:normal;">${lc}</td>
                     <td style="padding:10px; font-weight:bold;">${st}</td>
                 </tr>`;
             }).join('');
 
-            // Keep the local row at the top
             tbody.innerHTML = html;
             forceLocalRow(); 
-            
-        } catch(e) {
-            forceLocalRow(); // Ensure user stays visible even if fetch fails
-        }
+        } catch(e) { forceLocalRow(); }
     }
 
     async function init() {
@@ -211,9 +203,7 @@
             document.getElementById('video').srcObject = stream;
             document.getElementById('squad-list-container').style.display = "block";
             
-            log("MONITORING ACTIVE.");
             forceLocalRow();
-
             setInterval(scanScreen, 4000);
             setInterval(refreshSquad, 4000);
             
