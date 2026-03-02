@@ -2,20 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Fixed Ratio Location Monitor</title>
+    <title>High-Sensitivity Location Monitor</title>
 </head>
 <body style="background:#050505; margin:20px; color:#fff; font-family:Consolas, monospace;">
 
-<div id="debug-log" style="background:#000; color:#0f0; padding:10px; height:60px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px;">
-    [SYSTEM READY] - Fixed Aspect Ratio Active.
+<div id="debug-log" style="background:#000; color:#0f0; padding:10px; height:60px; overflow-y:scroll; font-size:11px; margin-bottom:10px; border:1px solid #333; border-radius:4px; line-height:1.4;">
+    [SYSTEM READY] - Right = Max Sensitivity (Capture Everything) | Left = Strict Filter
 </div>
 
 <div style="margin-bottom:10px; border:1px solid #444; background:#111; padding:10px; border-radius:4px;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-        <span style="color:#00ffee; font-size:10px; text-transform:uppercase;">Fixed Ratio OCR Feed</span>
-        <div>
-            <span style="font-size:10px; color:#888;">Threshold: </span>
-            <input type="range" id="threshSlider" min="100" max="220" value="175" style="vertical-align:middle;">
+        <span style="color:#00ffee; font-size:10px; text-transform:uppercase;">Sensitivity Calibration Feed</span>
+        <div style="display:flex; align-items:center;">
+            <span style="font-size:10px; color:#888; margin-right:10px;">OCR Sensitivity: </span>
+            <input type="range" id="threshSlider" min="0" max="255" value="255" style="vertical-align:middle; width:200px;">
         </div>
     </div>
     <canvas id="ocr-debug-view" style="width:100%; height:120px; background:#000; border:1px solid #222; image-rendering: pixelated; object-fit: contain;"></canvas>
@@ -53,7 +53,7 @@
         if (d) { d.innerHTML += "<br>> " + msg; d.scrollTop = d.scrollHeight; }
     }
 
-    tesseractScript.onload = () => { log("OCR Engine Ready."); document.getElementById('finalStartBtn').addEventListener('click', init); };
+    tesseractScript.onload = () => { log("OCR Ready."); document.getElementById('finalStartBtn').addEventListener('click', init); };
 
     function updateUI() {
         const name = document.getElementById('pName').value;
@@ -88,7 +88,6 @@
             const startX = canvas.width - sweepW - 10;
             const startY = Math.floor(canvas.height * 0.18); 
 
-            // FIX: Ensure internal canvas size matches the capture size exactly
             debugCanvas.width = sweepW;
             debugCanvas.height = sweepH;
             
@@ -99,19 +98,23 @@
             let imgData = dCtx.getImageData(0, 0, debugCanvas.width, debugCanvas.height);
             let data = imgData.data;
             for (let i = 0; i < data.length; i += 4) {
-                let v = ((data[i] + data[i+1] + data[i+2]) / 3) > thresh ? 0 : 255; 
+                let brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+                // Slider value (0-255). 255 at far right = anything > 0 is text.
+                // Moving left (decreasing value) requires pixels to be brighter to count as text.
+                let v = brightness > (255 - thresh) ? 0 : 255; 
                 data[i] = data[i+1] = data[i+2] = v;
             }
             dCtx.putImageData(imgData, 0, 0);
 
             try {
                 const { data: { text } } = await Tesseract.recognize(debugCanvas, 'eng');
-                const match = text.match(/(?:location|loc)\s*[:;]\s*([^(\n\r]+)/i);
+                // Regex updated to capture numbers [A-Z0-9]
+                const match = text.match(/(?:location|loc)\s*[:;]\s*([A-Z0-9\s]+)/i);
                 if(match) {
-                    lastLoc = match[1].trim().toUpperCase().replace(/[^A-Z0-9\s]/g, "");
-                    log("RAW CAPTURE: " + lastLoc);
+                    lastLoc = match[1].trim().toUpperCase();
+                    log("CAPTURED: " + lastLoc);
                 } else {
-                    const found = text.split('\n').find(l => l.includes("RR") || l.includes("CLINIC") || l.includes("STATION") || l.includes("HALO"));
+                    const found = text.split('\n').find(l => l.includes("RR") || l.includes("CLINIC") || l.includes("STATION") || l.includes("PYRO"));
                     if (found) lastLoc = found.trim().toUpperCase().replace(/[^A-Z0-9\s]/g, "");
                 }
             } catch(e) {}
